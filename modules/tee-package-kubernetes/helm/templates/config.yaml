@@ -1,0 +1,41 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: "{{ include "tee_proxy.fullname" . }}-config"
+type: Opaque
+stringData:
+  config.toml: |-
+    redis_port = "{{ .Values.redis.host }}:{{ .Values.redis.port }}"
+
+    private_key_variable = "PRIVATE_KEY"
+
+    initial_signing_policy_offset = 2
+
+    [db]
+    host = "{{ .Values.indexer.host }}"
+    port = {{ .Values.indexer.port | int }}
+    database = "{{ .Values.indexer.database.name }}"
+    username = "{{ .Values.indexer.database.user }}"
+    password = "{{ .Values.indexer.database.password }}"
+    log_queries = false
+
+
+    [addresses]
+    flare_systems_manager = "0x85680Dd93755Fe5d0789773fd0896cEE51F9e358"
+    relay = "0x92a6E1127262106611e1e129BB64B6D8654273F7"
+    voter_registry = "0xB4B93a3A3ADa93a574E6efeb5f295bf882934cB6"
+
+
+    [ports]
+    internal = "{{ .Values.app.internalPort }}"
+    external = "{{ .Values.app.externalPort }}"
+
+
+    [info_timing]
+    cycle_internal = "60s"
+    cycle_queue_response_wait = "2s"
+
+
+    [voting]
+    proposal_expiration = "120s"
+    max_pending_request = 100

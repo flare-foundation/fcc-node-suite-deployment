@@ -1,0 +1,11 @@
+services:
+  - name: tee-external
+    serviceName: ${name}
+    healthcheckPort: 6661
+    healthcheckRequestPath: /healthy
+    routePort: 6662
+    routeRules:
+      - matches:
+          - path:
+              type: PathPrefix
+              value: /

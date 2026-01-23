@@ -1,0 +1,14 @@
+services:
+  firebase-emulator:
+    image: vadimzhukck/firebase-emulators
+    ports:
+      - "4000:4000" # Emulator UI
+      - "8080:8080" # Firestore
+      - "9099:9099" # Auth
+      - "9000:9000" # Realtime DB
+      - "9199:9199" # Storage
+      - "8085:8085" # Pub/Sub
+    environment:
+      - FIREBASE_PROJECT_ID=demo-local
+    volumes:
+      - ./firebase-config:/firebase

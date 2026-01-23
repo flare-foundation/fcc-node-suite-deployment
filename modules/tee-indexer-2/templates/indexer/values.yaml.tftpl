@@ -1,0 +1,41 @@
+image:
+  repository: "ghcr.io/flare-foundation/flare-system-c-chain-indexer"
+  tag: "main"
+
+
+config:
+  chainRPCEndpoint: "http://internal-api-ctn-bg-private.coston.svc.cluster.local:9650/ext/C/rpc"
+  dbHost: "${db_host}"
+  dbUsers:
+    readOnly:
+      name: "indexer-reader"
+      password: "${db_reader_pass}"
+  dbAdmin:
+    name: "${db_user}"
+    password: "${db_pass}"
+  databases: [indexer]
+  dropTableAtStart: false
+  historyDrop: 0
+
+  indexer:
+    startIndex: 46000000
+    batchSize: 1000
+    numberOfParallelRequests: 10
+
+  collect_transactions:
+    - contract_address: "0x85680Dd93755Fe5d0789773fd0896cEE51F9e358"
+      func_sig: "6b4c7bd6"
+      status: true
+    - contract_address: "0xB4B93a3A3ADa93a574E6efeb5f295bf882934cB6"
+      func_sig: "8f7d0957"
+      status: true
+  collect_logs:
+    - contract_address: "0x92a6E1127262106611e1e129BB64B6D8654273F7"
+      topic: "0x91d0280e969157fc6c5b8f952f237b03d934b18534dafcac839075bbc33522f8"
+    - contract_address: "0xB4B93a3A3ADa93a574E6efeb5f295bf882934cB6"
+      topic: "0x824bc2cc10bfe21ead60b8c8a90716eb325b9335aa73eaede799abf38fce062c"
+    - contract_address: "0xB4B93a3A3ADa93a574E6efeb5f295bf882934cB6"
+      topic: "0xbfb6cd90b6e2668916d9e034926c84f40bcf94094b0d625ec8eecfdeb2150ae1"
+
+
+

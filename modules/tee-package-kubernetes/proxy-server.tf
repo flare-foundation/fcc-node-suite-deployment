@@ -144,13 +144,13 @@ resource "google_compute_firewall" "allow_tee_proxy_external" {
   description = "Allow external port 6662 for tee-proxy"
 }
 
-# Firewall rule for tee-proxy internal port (6661) - only from within VPC
+# Firewall rule for tee-proxy internal port (6661) - only from tee-machine
 resource "google_compute_firewall" "allow_tee_proxy_internal" {
   name          = join("-", compact(["allow-tee-proxy-internal", var.deploy_suffix]))
   network       = google_compute_network.tee_network.self_link
   direction     = "INGRESS"
   priority      = 1000
-  source_ranges = ["10.128.0.0/9"] # GCP internal ranges
+  source_ranges = ["${google_compute_instance.tee_machine.network_interface[0].network_ip}/32"]
   target_tags   = ["tee-proxy"]
 
   allow {
@@ -158,7 +158,7 @@ resource "google_compute_firewall" "allow_tee_proxy_internal" {
     ports    = ["6661"]
   }
 
-  description = "Allow internal port 6661 for tee-proxy from VPC"
+  description = "Allow internal port 6661 for tee-proxy from tee-machine only"
 }
 
 # Firewall rule for SSH access to tee-proxy (debug mode)

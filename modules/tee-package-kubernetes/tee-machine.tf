@@ -12,25 +12,9 @@ resource "google_compute_address" "tee_machine_ip" {
 resource "google_compute_instance" "tee_machine" {
   name         = join("-", compact(["tee-machine", var.deploy_suffix]))
   zone         = var.zone
-  machine_type = var.tee_machine_type
+  machine_type = "c3d-standard-4"
 
-  # Enable Confidential VM
-  confidential_instance_config {
-    enable_confidential_compute = true
-  }
-
-  # Set the maintenance policy
-  scheduling {
-    on_host_maintenance = "TERMINATE"
-    automatic_restart   = false
-  }
-
-  # Enable Shielded VM options
-  shielded_instance_config {
-    enable_secure_boot          = true
-    enable_vtpm                 = true
-    enable_integrity_monitoring = true
-  }
+  depends_on = [google_compute_instance.tee_proxy]
 
   # Image details
   boot_disk {
@@ -64,15 +48,15 @@ resource "google_compute_instance" "tee_machine" {
     "tee-container-log-redirect"   = var.tee_machine_debug_mode # Only allowed in debug
     "tee-monitoring-memory-enable" = var.tee_machine_debug_mode
     "tee-env-LOG_LEVEL"            = "INFO"
-    # "tee-env-PROXY_URL"            = "http://${trimsuffix(google_dns_record_set.internal_dns_record.name, ".")}"
-    "tee-env-INITIAL_OWNER" = var.initial_owner
-    "tee-env-EXTENSION_ID"  = var.extension_id
+    "tee-env-PROXY_URL"            = "http://${google_compute_instance.tee_proxy.network_interface[0].network_ip}:6661"
+    "tee-env-INITIAL_OWNER"        = var.initial_owner
+    "tee-env-EXTENSION_ID"         = var.extension_id
   }
   # Metadata documentation: https://cloud.google.com/confidential-computing/confidential-space/docs/reference/metadata-variables
 }
 
 resource "google_compute_instance_iam_member" "gitlab_ci_admin_tee_machine" {
-  project       = "flare-network-staging"
+  project       = var.project
   zone          = var.zone
   instance_name = google_compute_instance.tee_machine.name
   role          = "roles/compute.instanceAdmin.v1"
@@ -93,12 +77,14 @@ resource "google_compute_firewall" "allow_tee_machine_ports" {
   allow {
     protocol = "tcp"
     ports = [
+      # SSH
+      22,
       # Node exporter
       9100
     ]
   }
 
-  description = "Allow port 9100 to tee-machine tagged instances"
+  description = "Allow SSH (22) and node exporter (9100) to tee-machine tagged instances in debug mode"
 }
 
 resource "google_service_account_iam_member" "deployer_sa_user" {

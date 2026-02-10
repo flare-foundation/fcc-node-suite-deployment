@@ -44,7 +44,7 @@ variable "zone" {
 
 variable "tee_machine_type" {
   description = "Machine type for tee-machine."
-  default     = "c3d-standard-4" #Replace with C3D
+  default     = "c3d-standard-4"
 }
 
 # variable "tee_indexer_database" {

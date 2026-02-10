@@ -16,11 +16,6 @@
 #   project = var.project
 # }
 
-resource "google_compute_network" "tee_network" {
-  name                    = "tee-test-network"
-  auto_create_subnetworks = true
-}
-
 # data "cloudflare_zone" "default" {
 #   filter = {
 #     name = local.dns_zone_public

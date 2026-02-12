@@ -1,12 +1,7 @@
-resource "google_compute_network" "tee_network" {
-  name                    = "tee-network-${var.deploy_suffix}"
-  auto_create_subnetworks = true
-}
-
 # Allow internal communication between VMs in the network
 resource "google_compute_firewall" "internal_allow" {
   name    = "allow-internal-${var.deploy_suffix}"
-  network = google_compute_network.tee_network.id
+  network = var.network
 
   allow {
     protocol = "tcp"

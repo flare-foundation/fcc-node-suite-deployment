@@ -17,6 +17,10 @@ variable "zone" {
   default     = "europe-west1-b"
 }
 
+variable "network" {
+  description = "VPC network for the indexer instance"
+}
+
 variable "dns_zone_public" {
 
 }
@@ -28,6 +32,6 @@ variable "sql_tier" {
 }
 
 variable "cli" {
-  default = false
+  default     = false
   description = "If true loads a different config and makes indexer db public"
 }

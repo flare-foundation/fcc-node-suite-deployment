@@ -17,3 +17,8 @@ output "tee_machine_ip" {
   description = "External IP address of the tee-machine (only in debug mode)"
   value       = var.tee_machine_debug_mode ? google_compute_address.tee_machine_ip[0].address : null
 }
+
+output "network_self_link" {
+  description = "Self link of the VPC network"
+  value       = var.network
+}

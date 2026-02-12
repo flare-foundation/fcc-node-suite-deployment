@@ -29,7 +29,7 @@ resource "google_compute_instance" "tee_machine" {
   }
 
   network_interface {
-    network = google_compute_network.tee_network.self_link
+    network = var.network
     dynamic "access_config" {
       for_each = google_compute_address.tee_machine_ip
       content {
@@ -65,7 +65,7 @@ resource "google_compute_instance_iam_member" "gitlab_ci_admin_tee_machine" {
 
 resource "google_compute_firewall" "allow_tee_machine_ports" {
   name          = join("-", compact(["allow-tee-machine-ports", var.deploy_suffix]))
-  network       = google_compute_network.tee_network.self_link
+  network       = var.network
   direction     = "INGRESS"
   priority      = 1000
   source_ranges = ["0.0.0.0/0"]

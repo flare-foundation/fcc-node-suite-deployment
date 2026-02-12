@@ -47,17 +47,17 @@ variable "tee_machine_type" {
   default     = "c3d-standard-4"
 }
 
-# variable "tee_indexer_database" {
-#   description = "Configuration for the TEE Indexer database"
-#   type = object({
-#     hostname     = string
-#     port         = number
-#     databaseName = string
-#     user         = string
-#     password     = string
-#   })
-#   sensitive = true
-# }
+variable "tee_indexer_database" {
+  description = "Configuration for the TEE Indexer database"
+  type = object({
+    hostname     = string
+    port         = number
+    databaseName = string
+    user         = string
+    password     = string
+  })
+  sensitive = true
+}
 
 variable "deploy_account_email" {
   description = "email of account used for deploys. module will add permissions that are needed to perform the deploy (for tee-node and tee-proxy)"
@@ -77,4 +77,9 @@ variable "tee_machine_debug_mode" {
   description = "Debug mode for tee machine"
   type        = bool
   default     = false
+}
+
+variable "network" {
+  description = "VPC network self link to use for all resources"
+  type        = string
 }

@@ -1,12 +1,12 @@
 output "database_hostname" {
   description = "Internal hostname of indexer db"
-  value       = module.database.internal_dns_record
+  value       = local.db_host
 }
 
 output "database_config" {
   description = "Configuration object for the TEE Indexer database"
   value = {
-    hostname     = module.database.internal_dns_record
+    hostname     = local.db_host
     port         = 3306
     databaseName = local.db_name
     user         = "indexer-reader"

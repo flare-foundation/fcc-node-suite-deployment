@@ -2,18 +2,13 @@ locals {
   config_toml = templatefile("${path.module}/templates/tee-proxy/config.toml.tftpl", {
     # redis_host = google_redis_instance.tee_proxy_redis.host
     # redis_port = google_redis_instance.tee_proxy_redis.port
-    redis_host = "test_redis_host"
-    redis_port = 1234
-    # indexer_host              = var.tee_indexer_database.hostname
-    # indexer_port              = var.tee_indexer_database.port
-    # indexer_database_name     = var.tee_indexer_database.databaseName
-    # indexer_database_user     = var.tee_indexer_database.user
-    # indexer_database_password = var.tee_indexer_database.password
-    indexer_host              = "Test"
-    indexer_port              = 4200
-    indexer_database_name     = "Test"
-    indexer_database_user     = "Test"
-    indexer_database_password = "Test"
+    redis_host                = "test_redis_host"
+    redis_port                = 1234
+    indexer_host              = var.tee_indexer_database.hostname
+    indexer_port              = var.tee_indexer_database.port
+    indexer_database_name     = var.tee_indexer_database.databaseName
+    indexer_database_user     = var.tee_indexer_database.user
+    indexer_database_password = var.tee_indexer_database.password
     internal_port             = 6661
     external_port             = 6662
   })
@@ -113,7 +108,7 @@ resource "google_compute_instance" "tee_proxy" {
   }
 
   network_interface {
-    network = google_compute_network.tee_network.self_link
+    network = var.network
     access_config {
       nat_ip = google_compute_address.tee_proxy_ip.address
     }
@@ -130,7 +125,7 @@ resource "google_compute_instance" "tee_proxy" {
 # Firewall rule for tee-proxy external port (6662)
 resource "google_compute_firewall" "allow_tee_proxy_external" {
   name          = join("-", compact(["allow-tee-proxy-external", var.deploy_suffix]))
-  network       = google_compute_network.tee_network.self_link
+  network       = var.network
   direction     = "INGRESS"
   priority      = 1000
   source_ranges = ["0.0.0.0/0"]
@@ -147,7 +142,7 @@ resource "google_compute_firewall" "allow_tee_proxy_external" {
 # Firewall rule for tee-proxy internal port (6661) - only from tee-machine
 resource "google_compute_firewall" "allow_tee_proxy_internal" {
   name          = join("-", compact(["allow-tee-proxy-internal", var.deploy_suffix]))
-  network       = google_compute_network.tee_network.self_link
+  network       = var.network
   direction     = "INGRESS"
   priority      = 1000
   source_ranges = ["${google_compute_instance.tee_machine.network_interface[0].network_ip}/32"]
@@ -164,7 +159,7 @@ resource "google_compute_firewall" "allow_tee_proxy_internal" {
 # Firewall rule for SSH access to tee-proxy (debug mode)
 resource "google_compute_firewall" "allow_tee_proxy_ssh" {
   name          = join("-", compact(["allow-tee-proxy-ssh", var.deploy_suffix]))
-  network       = google_compute_network.tee_network.self_link
+  network       = var.network
   direction     = "INGRESS"
   priority      = 1000
   source_ranges = ["0.0.0.0/0"]

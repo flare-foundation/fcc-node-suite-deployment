@@ -1,0 +1,56 @@
+[db]
+host = "${db_host}"
+port = 3306
+database = "indexer"
+username = "${db_user}"
+password = "${db_pass}"
+log_queries = false
+drop_table_at_start = false
+%{ if history_drop_seconds != null }
+history_drop = ${history_drop_seconds}
+%{ endif }
+
+[logger]
+level = "INFO"
+console = true
+
+[chain]
+node_url = "${chain_rpc_endpoint}"
+
+[indexer]
+start_index = ${start_index}
+batch_size = 1000
+rpc_concurrency = 10
+# Public Flare RPC endpoints cap eth_getLogs at a 30-block range per call -
+# log_range must stay at or below that or log collection backs off forever
+# and never persists a first indexer state row. Chosen so batch_size /
+# log_range (request count per batch) and that / rpc_concurrency both divide
+# evenly - an uneven split here silently drops the batch's tail blocks from
+# log collection instead of erroring. Tuning rpc_concurrency between 5-20
+# against the public Coston RPC made no consistent difference (observed
+# ~150-190s per 1000-block batch regardless) - it appears throughput is
+# capped by the endpoint itself, not client-side parallelism, so don't
+# expect large wins from pushing this further.
+log_range = 25
+
+[[indexer.collect_transactions]]
+contract_address = "${flare_systems_manager}"
+func_sig = "6b4c7bd6"
+status = true
+
+[[indexer.collect_transactions]]
+contract_address = "${voter_registry}"
+func_sig = "8f7d0957"
+status = true
+
+[[indexer.collect_logs]]
+contract_address = "${relay}"
+topic = "0x91d0280e969157fc6c5b8f952f237b03d934b18534dafcac839075bbc33522f8"
+
+[[indexer.collect_logs]]
+contract_address = "${voter_registry}"
+topic = "0x824bc2cc10bfe21ead60b8c8a90716eb325b9335aa73eaede799abf38fce062c"
+
+[[indexer.collect_logs]]
+contract_address = "${voter_registry}"
+topic = "0xbfb6cd90b6e2668916d9e034926c84f40bcf94094b0d625ec8eecfdeb2150ae1"

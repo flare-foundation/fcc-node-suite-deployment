@@ -1,0 +1,6 @@
+# Copy to terraform.tfvars. project/service_account_email/tee_node_docker_image/
+# tee_proxy_docker_image already default to flare-network-sandbox's real
+# values - only the private key needs supplying.
+
+# Generate with ../../scripts/generate-key.sh
+tee_proxy_private_key = "0x..."

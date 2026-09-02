@@ -1,0 +1,220 @@
+# Testing a deployment
+
+How to check that a freshly-applied stack (tee-machine + tee-proxy +
+tee-indexer) is actually working, not just that Terraform succeeded. Examples
+below use `envs/coston-sandbox`'s naming (`deploy_suffix = "coston"`,
+`project = "flare-network-sandbox"`, `zone = "europe-west1-b"`) - substitute
+your own if you're testing a different env.
+
+## 1. `/info` - the main external check
+
+```
+terraform output tee_proxy_info_url
+curl -s "$(terraform output -raw tee_proxy_info_url)" | jq .
+```
+
+This hits tee-proxy's public port (6662). A **healthy, settled** response
+looks like:
+
+```jsonc
+{
+  "teeInfo": {
+    "challenge": "0x...",                 // latest C-chain block hash the indexer has seen - should change on every request
+    "publicKey": { "x": "0x...", "y": "0x..." },
+    "initialSigningPolicyId": 123,         // non-zero once a policy has been read from the Relay contract
+    "initialSigningPolicyHash": "0x...",   // NOT all-zero (0x000...000)
+    "lastSigningPolicyId": 123,
+    "lastSigningPolicyHash": "0x...",      // NOT all-zero
+    "chainId": 16,
+    "teeTimestamp": 1767200000,            // recent unix time, close to "now" on every request
+    ...
+  },
+  "machineData": {
+    "extensionId": "0x000...000",          // expected all-zero here - coston-sandbox doesn't set extension_id
+    "initialOwner": "0xEfFDC9d60eaa243b2fCC5c2A21FA938B3A872d07", // NOT zero (module default)
+    "codeHash": "0x...",                   // non-empty once tee-machine has attested
+    "platform": "...",
+    "publicKey": { "x": "0x...", "y": "0x..." }
+  },
+  "dataSignature": "0x...",                // non-empty
+  "attestation": "...",                    // non-empty JWT-like string
+  "proxySignature": "0x..."                // non-empty - tee-proxy always adds this once it responds at all
+}
+```
+
+What "wrong" looks like: `initialSigningPolicyHash`/`lastSigningPolicyHash`
+staying `0x000...000`, `initialSigningPolicyId`/`lastSigningPolicyId`
+staying `0`, or `attestation`/`dataSignature`/`codeHash` staying empty for
+more than a few minutes after apply.
+
+**Don't be fooled by `machineData.extensionId` being all-zero** - that's
+correct for this deployment, since `envs/coston-sandbox` doesn't set
+`extension_id` (module default is the zero address). Only `initialOwner`
+being zero (or wrong) would indicate a real problem.
+
+**Timing note specific to this stack:** the indexer only starts collecting
+from a recent block (`indexer_start_index` in `envs/coston-sandbox/main.tf`,
+currently `53650000`) rather than from genesis. tee-proxy's signing-policy
+values come from `SigningPolicyInitialized` events on the Relay contract, so
+if no such event has landed on-chain at or after that start block yet, the
+policy fields can legitimately stay empty until the next natural rollover on
+Coston. If they're still empty after a long wait, first confirm (step 4)
+that the indexer has actually caught up to chain tip before assuming
+something's broken.
+
+If `curl` returns nothing / connection refused: tee-proxy isn't up yet, or
+the external firewall/IP is wrong - check `terraform output
+tee_proxy_external_endpoint` and tee-proxy's logs (step 3).
+
+## 2. `/healthy`, `/startup`, `/ready` - internal checks
+
+These live on tee-proxy's **internal** port (6661), which the firewall only
+opens to tee-machine's IP - you can't hit them from your laptop. SSH into
+tee-proxy instead (debug mode is on in coston-sandbox, so this works):
+
+```
+gcloud compute ssh tee-proxy-coston --zone europe-west1-b --project flare-network-sandbox --tunnel-through-iap
+curl -s localhost:6661/healthy   # trivial 200 - only tells you the process is up
+curl -s localhost:6661/startup   # 200 once initial startup finished
+curl -s -i localhost:6661/ready  # the useful one
+```
+
+`/ready` checks, in order, and its response body names the failing step:
+startup finished -> Redis `PING` -> indexer delay (`c-chain indexer delay`,
+fails if indexer is >140s behind chain tip) -> info service present -> info
+freshness (fails if `/info` hasn't updated in >140s) -> attestation sticky
+error -> result-storage sticky error. A non-200 here with a body like
+`"c-chain indexer delay: ..."` or `"attestation failing: ..."` tells you
+exactly which subsystem to go look at next.
+
+## 3. Logs
+
+**tee-proxy** (Container-Optimized OS VM, plain Docker):
+
+```
+gcloud compute ssh tee-proxy-coston --zone europe-west1-b --project flare-network-sandbox --tunnel-through-iap
+docker ps                      # find the container
+docker logs -f <container-id>
+```
+
+Look for:
+- `"connecting to database: %v"` (panic) - can't reach the indexer's Cloud SQL instance
+- `"c-chain indexer: %v"` (panic) - failed waiting on indexer sync; also watch for repeated `"Database out of sync. Delayed for %v"` warnings
+- `"fetching initial TEE info"` then `"initial TEE info fetched"` - tee-proxy successfully talked to tee-machine; if you only ever see `"tee info attempt %d failed, retrying..."` or `"tee info update failed in %d consecutive cycles..."`, tee-machine isn't reachable or isn't responding
+- `"initialized for policy %d"` / `"restart: loaded policies %d and %d..."` / `"updated signing policy to %d"` - signing policy was read successfully
+- `"attestation verification failed (sticky, readiness fails until restart): %v"` - attestation problem, requires a restart once fixed
+- `"attestation verification disabled — bootstrap relies on network isolation only"` - expected/benign if attestation is deliberately off for this env, not a bug
+
+**tee-machine** (Confidential Space - no direct `docker logs` access; stdout
+is redirected to the serial console because `tee_machine_debug_mode = true`
+enables `tee-container-log-redirect`):
+
+```
+gcloud compute instances get-serial-port-output tee-machine-coston --zone europe-west1-b --project flare-network-sandbox
+```
+
+Look for `"Node initialized."` / `"tee node initialized"` and per-queue
+`"%s queue: processing started"` lines as signs of a normal boot. Repeated
+`"%s queue: error getting action: %v"` (often a `dial tcp ... connection
+refused` underneath) means tee-node can't reach tee-proxy at
+`PROXY_URL` - check `tee-env-PROXY_URL` in the instance metadata and that
+tee-proxy is actually listening on 6661. tee-node itself doesn't emit an
+explicit attestation-success line; look on the tee-proxy side instead
+(above) for confirmation that an info exchange completed.
+
+**tee-indexer** (also a plain COS VM):
+
+```
+gcloud compute ssh tee-indexer-coston --zone europe-west1-b --project flare-network-sandbox --tunnel-through-iap
+docker ps
+docker logs -f <container-id>
+```
+
+Errors here (RPC failures against the `chain_rpc_endpoint`, DB write
+failures) are the most common root cause of tee-proxy's indexer-delay
+readiness failures - check this first if `/ready` complains about the
+indexer.
+
+## 4. Supporting infra sanity checks
+
+**Indexer DB catching up:** the indexer's DB is private-IP-only, so query it
+from the indexer VM rather than your laptop. Get credentials without adding
+a Terraform output:
+
+```
+cd envs/coston-sandbox
+terraform console
+> module.tee_indexer.database_config
+```
+
+Then from inside the tee-indexer VM (it has Docker, no local mysql client):
+
+```
+docker run --rm -it --network host mysql:8 mysql -h <hostname> -u indexer-reader -p<password> indexer
+mysql> SHOW TABLES;
+mysql> -- inspect whichever table has a block-number/timestamp column for recency
+```
+
+If the most recent indexed block is far behind Coston's current tip, that's
+your indexer-delay problem, not a tee-proxy bug.
+
+**Redis:** `/ready` already `PING`s it, so that's normally sufficient. If
+you want to check by hand, it's unauthenticated and only reachable inside
+the VPC - SSH into tee-proxy and use `docker run --rm -it --network host
+redis:7 redis-cli -h <redis-host> -p <redis-port> ping`.
+
+**GCS bucket** (`terraform output` doesn't expose it at env level, but
+`gsutil ls gs://flare-network-sandbox-tee-proxy-coston/` works directly from
+your laptop with normal GCP auth): this is tee-proxy's result-storage
+backend. Being empty right after a fresh apply is normal - it fills in as
+wallet/backup actions happen. A `"result storage failing"` error from
+`/ready` is the more reliable signal that this is broken, not bucket
+emptiness by itself.
+
+## 5. Applying a config/metadata-only change to an already-running deployment
+
+`terraform apply` updating an instance's `metadata` (docker image, env vars,
+the rendered config file) does **not** take effect on its own on an
+already-running VM - `google_compute_instance`'s `allow_stopping_for_update`
+lets Terraform *update* the metadata in place, but nothing then tells the
+already-running guest to re-read it:
+
+- **tee-proxy / tee-indexer** (Container-Optimized OS + Konlet): the new
+  `user-data` sits in metadata but the container keeps running under the old
+  config until something re-triggers Konlet. `sudo systemctl restart
+  konlet-startup.service` on the box is enough *if* `/etc/.../config.toml`
+  (or whatever file) was already written as a real file on a previous boot -
+  but a full reboot (cloud-init re-running `write_files` racing against
+  Konlet trying to mount the same path) can turn that path into an **empty
+  directory** instead of a file, and the container then fatals with
+  `read config.toml: is a directory`. If that happens: `sudo rmdir` the bad
+  directory, copy a good config into place by hand, `chmod 644`/`chown
+  root:root`, then `systemctl restart konlet-startup.service` again - don't
+  keep re-rebooting hoping the race resolves itself, it's reproducible, not
+  a fluke.
+- **tee-machine** (Confidential Space): there's no live-reload path at all.
+  `sudo systemctl restart container-runner.service` fails immediately with
+  `status=4/NOPERMISSION` - Confidential Space's launcher refuses to re-run
+  within the same boot, by design (it ties the workload to boot-time
+  attestation). A metadata change here (e.g. a new `tee-env-*` var) only
+  takes effect after a real `gcloud compute instances reset`.
+
+In short: after any `terraform apply` that only shows a `metadata` diff, plan
+on following it with either a targeted `systemctl restart` (tee-proxy/
+tee-indexer, watch for the directory-race above) or a full `gcloud compute
+instances reset` (tee-machine, always) before expecting the change to be live.
+
+## Quick symptom -> cause table
+
+| Symptom | Likely cause | Check |
+|---|---|---|
+| `/info` unreachable | tee-proxy down, or wrong external IP/firewall | tee-proxy logs, `terraform output tee_proxy_external_endpoint` |
+| `/info` returns data but signing-policy fields stay zero | indexer hasn't seen a `SigningPolicyInitialized` log yet, or hasn't caught up | `/ready` indexer-delay check, tee-indexer logs, indexer DB row recency |
+| `/info` `attestation`/`dataSignature`/`codeHash` empty | tee-machine hasn't attested / isn't reachable from tee-proxy | tee-machine serial console, tee-proxy's `"fetching initial TEE info"` logs |
+| tee-proxy panics `error signing: could not sign` / `/info` signature fields are 0 bytes | tee-node has no `CHAIN_ID` - it signs nothing until `ChainID()` succeeds (`tee-env-CHAIN_ID` in `tee-machine.tf`) | tee-machine serial console for `router.go:164 ... error signing`; confirm `tee-env-CHAIN_ID` is in the instance's metadata |
+| tee-proxy panics `initializing signing policy: ... no signing policy logs found in db` | indexer's `start_index` is after the Relay's last `SigningPolicyInitialized` log, so that event was never indexed | find the actual block via a block explorer's log API (30-block `eth_getLogs` RPC caps make scanning for it directly impractical), set `start_index` at or before it |
+| indexer makes little/no progress, repeated `Backoff exhausted: ... requested too many blocks ..., maximum is set to 30` | `log_range` unset/too wide for this RPC's `eth_getLogs` block-range cap | `modules/tee-indexer/templates/indexer/config.toml.tftpl`'s `[indexer]` block - `log_range` must be <= the RPC's cap |
+| indexer progresses but very slowly (~1000 blocks per 2-3 minutes) against `coston-api.flare.network` | inherent public-RPC rate limiting, not a config problem - tuning `rpc_concurrency`/`log_range` past a point doesn't help and can even hurt (observed higher concurrency increasing per-request latency) | just let it run, or get the deploying project allowlisted for less-limited public RPC access (Cloud Armor IP/API-key allowlist on Flare's side) - the `*.svc.cluster.local` internal validator RPC infra's own staging env uses isn't reachable from an external project without new Private Service Connect plumbing |
+| `/ready` fails on Redis | Redis instance not up / network peering issue | Redis instance status in GCP console, `redis-cli ping` from tee-proxy |
+| `/ready` fails on indexer delay | RPC endpoint down, indexer stuck/crashing, or still working through a large backlog | tee-indexer logs, `chain_rpc_endpoint` reachability |
+| `/ready` fails on attestation (sticky) | attestation error, needs a tee-proxy restart after root cause is fixed | tee-proxy logs for the sticky attestation error line |

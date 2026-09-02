@@ -1,0 +1,36 @@
+redis_port = "${redis_host}:${redis_port}"
+
+chain_id = ${chain_id}
+private_key_variable = "PRIVATE_KEY"
+initial_signing_policy_offset = 2
+
+[db]
+host = "${indexer_host}"
+port = ${indexer_port}
+database = "${indexer_database_name}"
+username = "${indexer_database_user}"
+password = "${indexer_database_password}"
+log_queries = false
+
+[addresses]
+flare_systems_manager = "${flare_systems_manager}"
+relay = "${relay}"
+voter_registry = "${voter_registry}"
+
+[ports]
+internal = "${internal_port}"
+external = "${external_port}"
+
+[info_timing]
+cycle_internal = "60s"
+cycle_queue_response_wait = "2s"
+
+[voting]
+proposal_expiration = "120s"
+max_pending_request = 100
+
+[gcs]
+bucket = "${gcs_bucket}"
+prefix = "${gcs_prefix}"
+url = ""
+credentials_file = ""

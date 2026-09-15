@@ -226,9 +226,15 @@ resource "google_compute_firewall" "allow_tee_proxy_internal" {
   description = "Allow internal port ${local.internal_port} for tee-proxy from tee-machine only"
 }
 
-# Firewall rule for SSH access to tee-proxy (debug mode)
+# Firewall rule for operator SSH access to tee-proxy.
+#
+# Deliberately not gated on tee_machine_debug_mode. tee-proxy is a plain COS VM
+# with no attestation posture to protect, and coupling the two meant turning off
+# debug on the Confidential Space VM also removed the only way to reach the
+# proxy - which bites exactly when you need it, since a restarted tee-machine
+# leaves tee-proxy serving its cached payload and never re-pairing.
 resource "google_compute_firewall" "allow_tee_proxy_ssh" {
-  count = var.tee_machine_debug_mode ? 1 : 0
+  count = var.allow_tee_proxy_ssh ? 1 : 0
 
   name      = join("-", compact(["allow-tee-proxy-ssh", var.deploy_suffix]))
   network   = var.network
@@ -244,5 +250,5 @@ resource "google_compute_firewall" "allow_tee_proxy_ssh" {
     ports    = ["22"]
   }
 
-  description = "Allow SSH access to tee-proxy for debugging in debug mode, via IAP only"
+  description = "Allow operator SSH access to tee-proxy, via IAP only"
 }

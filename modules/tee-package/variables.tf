@@ -206,3 +206,8 @@ variable "governance_tee_manager" {
   }
 }
 
+variable "allow_tee_proxy_ssh" {
+  description = "Open SSH to tee-proxy through IAP (35.235.240.0/20 only; the caller still needs roles/iap.tunnelResourceAccessor). Separate from tee_machine_debug_mode on purpose - tee-proxy is a plain COS VM, and without this there is no way to restart a wedged proxy short of replacing the instance. scripts/flush-redis.sh needs it."
+  type        = bool
+  default     = true
+}

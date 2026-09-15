@@ -111,5 +111,14 @@ envs/
   example/         generic template - bring your own project
   coston-sandbox/  concrete example targeting Coston
 scripts/
-  generate-key.sh  generates a throwaway signing keypair
+  generate-key.sh       generates a throwaway signing keypair
+  redeploy-proxy.sh     replaces tee-proxy (and tee-machine with it)
+  redeploy-indexer.sh   replaces tee-indexer, optionally wiping its database
+  flush-redis.sh        drains tee-proxy's Redis queue
 ```
+
+The three redeploy/flush scripts are run from an env directory, e.g.
+`cd envs/coston-sandbox && ../../scripts/redeploy-proxy.sh`. A config change
+needs one of them rather than a plain `terraform apply`: cloud-init runs only
+on first boot and Confidential Space reads its metadata only at boot, so an
+updated config on a running VM is never picked up. See `TESTING.md` section 5.

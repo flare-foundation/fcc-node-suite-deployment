@@ -182,6 +182,15 @@ you want to check by hand, it's unauthenticated and only reachable inside
 the VPC - SSH into tee-proxy and use `docker run --rm -it --network host
 redis:7 redis-cli -h <redis-host> -p <redis-port> ping`.
 
+What `/ready` will *not* tell you is that the queue has backed up. While
+tee-machine is unreachable, tee-proxy enqueues a TEE_INFO action every 5s with
+no cap, and the node drains FIFO at roughly 1/s - so a backlog built during an
+outage outlives the outage by hours, and the stack cannot recover on its own
+even after the original fault is fixed. tee-proxy logs `queue direct depth N
+exceeds threshold 100` while this is happening, but nothing acts on it. Check
+the depth with `redis-cli ... DBSIZE`, or just run
+`../../scripts/flush-redis.sh --dry-run`, which reports it and exits.
+
 **GCS bucket** (`terraform output` doesn't expose it at env level, but
 `gsutil ls gs://flare-network-sandbox-tee-proxy-coston/` works directly from
 your laptop with normal GCP auth): this is tee-proxy's result-storage
@@ -190,38 +199,49 @@ wallet/backup actions happen. A `"result storage failing"` error from
 `/ready` is the more reliable signal that this is broken, not bucket
 emptiness by itself.
 
-## 5. Applying a config/metadata-only change to an already-running deployment
+## 5. Applying a config change to an already-running deployment
 
-`terraform apply` updating an instance's `metadata` (docker image, env vars,
-the rendered config file) does **not** take effect on its own on an
-already-running VM - `google_compute_instance`'s `allow_stopping_for_update`
-lets Terraform *update* the metadata in place, but nothing then tells the
-already-running guest to re-read it:
+Short version: use the scripts in `scripts/`, run from an env directory.
 
-- **tee-proxy / tee-indexer** (Container-Optimized OS + Konlet): the new
-  `user-data` sits in metadata but the container keeps running under the old
-  config until something re-triggers Konlet. `sudo systemctl restart
-  konlet-startup.service` on the box is enough *if* `/etc/.../config.toml`
-  (or whatever file) was already written as a real file on a previous boot -
-  but a full reboot (cloud-init re-running `write_files` racing against
-  Konlet trying to mount the same path) can turn that path into an **empty
-  directory** instead of a file, and the container then fatals with
-  `read config.toml: is a directory`. If that happens: `sudo rmdir` the bad
-  directory, copy a good config into place by hand, `chmod 644`/`chown
-  root:root`, then `systemctl restart konlet-startup.service` again - don't
-  keep re-rebooting hoping the race resolves itself, it's reproducible, not
-  a fluke.
-- **tee-machine** (Confidential Space): there's no live-reload path at all.
-  `sudo systemctl restart container-runner.service` fails immediately with
-  `status=4/NOPERMISSION` - Confidential Space's launcher refuses to re-run
-  within the same boot, by design (it ties the workload to boot-time
-  attestation). A metadata change here (e.g. a new `tee-env-*` var) only
-  takes effect after a real `gcloud compute instances reset`.
+| Change | Command |
+|---|---|
+| tee-proxy config, unit, image, or any `tee-env-*` value | `../../scripts/redeploy-proxy.sh` |
+| indexer config or image | `../../scripts/redeploy-indexer.sh` |
+| indexer config **and** you moved `start_index` backwards | `../../scripts/redeploy-indexer.sh --drop-db` |
+| tee-proxy's queue has backed up | `../../scripts/flush-redis.sh` |
 
-In short: after any `terraform apply` that only shows a `metadata` diff, plan
-on following it with either a targeted `systemctl restart` (tee-proxy/
-tee-indexer, watch for the directory-race above) or a full `gcloud compute
-instances reset` (tee-machine, always) before expecting the change to be live.
+Why a plain `terraform apply` is not enough: cloud-init runs only on **first
+boot**, and Confidential Space reads its metadata only at boot. Terraform will
+happily update `metadata` in place on a running VM, but nothing then tells the
+guest to re-read it, so the change silently does not take effect. The scripts
+wrap `terraform apply -replace=...`, which recreates the instance instead.
+
+Two things the scripts handle that are easy to get wrong by hand:
+
+- **tee-machine must be replaced alongside tee-proxy.** tee-machine's
+  `PROXY_URL` is baked into its boot metadata from tee-proxy's internal IP. A
+  replaced proxy can come back on a different IP, and tee-machine has no way to
+  notice. `redeploy-proxy.sh` always replaces both.
+- **`--drop-db` is a two-pass apply.** `drop_table_at_start` has to go back to
+  `false` afterwards, or the indexer wipes its database on every subsequent
+  restart. The script does the second pass for you.
+
+If you are working on the box directly rather than through Terraform:
+
+- **tee-proxy / tee-indexer** run their container from a systemd unit, so
+  `sudo systemctl restart tee-proxy` is a real restart path. It restarts the
+  process with the config that is already on disk - it does not pick up a
+  changed Terraform config, which still needs a replace. (Under the old Konlet
+  setup there was no reliable restart at all: cloud-init's `write_files` raced
+  Konlet mounting the same path and could leave `config.toml` as an empty
+  directory, fataling with `read config.toml: is a directory`. That race is
+  gone - `write_files` now always completes before the unit starts.)
+- **tee-machine** has no live-reload path at all. `sudo systemctl restart
+  container-runner.service` fails immediately with `status=4/NOPERMISSION`;
+  Confidential Space's launcher refuses to re-run within the same boot by
+  design, since the workload is tied to boot-time attestation. Only a real
+  `gcloud compute instances reset` (or the replace the script does) applies a
+  metadata change here.
 
 ## Quick symptom -> cause table
 
@@ -236,5 +256,7 @@ instances reset` (tee-machine, always) before expecting the change to be live.
 | indexer progresses but very slowly (~1000 blocks per 2-3 minutes) against `coston-api.flare.network` | largely public-RPC rate limiting. **Re-measure before accepting this** - the figure was taken on indexer 1.x, and v2.0.1 both fixed continuous indexing issuing one `eth_getLogs` per filter serially and raised the per-attempt RPC timeout default from 1s to 5s | if it is still slow on v2: let it run, or get the deploying project allowlisted for less-limited public RPC access (Cloud Armor IP/API-key allowlist on Flare's side) - the `*.svc.cluster.local` internal validator RPC infra's own staging env uses isn't reachable from an external project without new Private Service Connect plumbing |
 | `/ready` fails on Redis | Redis instance not up / network peering issue | Redis instance status in GCP console, `redis-cli ping` from tee-proxy |
 | `/ready` fails on indexer delay | RPC endpoint down, indexer stuck/crashing, or still working through a large backlog | tee-indexer logs, `chain_rpc_endpoint` reachability |
+| tee-proxy healthy but stuck, `queue direct depth N exceeds threshold 100` in its logs | TEE_INFO actions enqueued every 5s with no cap while tee-machine was unreachable; the node drains FIFO at ~1/s, so the backlog outlives the outage by hours | `scripts/flush-redis.sh` (`--dry-run` to see the depth first) |
+| tee-machine restarted; tee-proxy keeps serving a stale payload and never re-pairs | tee-proxy caches the last TEE info and has no re-pair trigger | `sudo systemctl restart tee-proxy` over IAP (needs `allow_tee_proxy_ssh`, default true), or `scripts/redeploy-proxy.sh` |
 | indexer exits at startup complaining about the `states` table | indexer 2.x adds a unique index on `states.name`, and `AutoMigrate` refuses to create it if a 1.x database holds duplicate names | `SELECT name, COUNT(*) FROM states GROUP BY name HAVING COUNT(*) > 1;` - keep the row with the highest `index` per name, delete the rest. An empty result means this is not your problem |
 | `/ready` fails on attestation (sticky) | attestation error, needs a tee-proxy restart after root cause is fixed | tee-proxy logs for the sticky attestation error line |

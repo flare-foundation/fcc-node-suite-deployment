@@ -32,3 +32,18 @@ output "tee_proxy_gcs_bucket" {
   description = "Name of the GCS bucket tee-proxy uses for persistent storage"
   value       = google_storage_bucket.tee_proxy.name
 }
+
+output "tee_proxy_instance_name" {
+  description = "Instance name of tee-proxy, for `gcloud compute ssh --tunnel-through-iap` and for the -replace address the redeploy scripts use"
+  value       = google_compute_instance.tee_proxy.name
+}
+
+output "redis_host" {
+  description = "Private IP of the Memorystore instance tee-proxy queues through. Needed by scripts/flush-redis.sh - it is not reachable from outside the VPC, so flushing means going through tee-proxy."
+  value       = google_redis_instance.tee_proxy_redis.host
+}
+
+output "redis_port" {
+  description = "Port of the Memorystore instance tee-proxy queues through"
+  value       = google_redis_instance.tee_proxy_redis.port
+}

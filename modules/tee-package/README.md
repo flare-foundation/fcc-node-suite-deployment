@@ -36,6 +36,11 @@ plus container log redirection - useful when standing this up for the first
 time, turn it off once you've confirmed it works. (It does *not* add a public
 IP: tee-machine has none in either mode, by design.)
 
+`allow_tee_proxy_ssh` (default `true`) is deliberately separate from it.
+tee-proxy is a plain COS VM with no attestation posture to protect, the rule
+is IAP-only and still needs `roles/iap.tunnelResourceAccessor`, and without it
+there is no way to restart a wedged proxy short of replacing the instance.
+
 ## Governance
 
 Registering a machine needs at least `governance_signers` and

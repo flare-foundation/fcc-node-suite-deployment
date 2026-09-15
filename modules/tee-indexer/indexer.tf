@@ -1,8 +1,21 @@
 locals {
-  # Schema per flarenetwork/flare-system-c-chain-indexer's internal/config/config.go
-  # (TOML, not YAML - the binary's default is a relative ./config.toml, which
-  # its Dockerfile's WORKDIR /app makes /app/config.toml, hence the mount path
-  # below).
+  # Pinned deliberately. The `:main` tag this used to carry floats, and it
+  # crossed a major version on 2026-08-18 (v2.0.0) - two applies of the same
+  # commit either side of that date would deploy different indexers with
+  # nothing in the plan to say so.
+  indexer_image = "ghcr.io/flare-foundation/flare-system-c-chain-indexer:v2.0.2"
+
+  # v2's readiness endpoint: 503 while startup catchup runs, 200 once
+  # continuous indexing begins.
+  health_port = 8080
+
+  # Schema per flare-foundation/flare-system-c-chain-indexer's
+  # internal/config/config.go (TOML, not YAML - the binary's default is a
+  # relative ./config.toml, which its Dockerfile's WORKDIR /app makes
+  # /app/config.toml, hence the mount path below). We stay on the default
+  # `mode = "full"`; v2's fsp mode would index selectively from on-chain reward
+  # epochs, but its built-in collectors do not cover the two transaction
+  # filters tee-proxy reads, so switching needs a live verification first.
   config_toml = templatefile("${path.module}/templates/indexer/config.toml.tftpl", {
     chain_rpc_endpoint    = var.chain_rpc_endpoint
     db_host               = local.db_host
@@ -15,34 +28,51 @@ locals {
     history_drop_seconds  = var.history_drop_seconds
   })
 
-  # Konlet container declaration for Container-Optimized OS
-  container_declaration = <<-EOT
-    spec:
-      containers:
-      - name: tee-indexer
-        image: ghcr.io/flare-foundation/flare-system-c-chain-indexer:main
-        stdin: false
-        tty: false
-        volumeMounts:
-        - mountPath: /app/config.toml
-          name: config
-          readOnly: true
-      volumes:
-      - name: config
-        hostPath:
-          path: /etc/tee-indexer/config.toml
-      restartPolicy: Always
+  # systemd unit that runs the indexer container, replacing the Konlet
+  # `gce-container-declaration` metadata key - see the equivalent comment in
+  # modules/tee-package/proxy-server.tf for why that key is gone.
+  tee_indexer_service = <<-EOT
+    [Unit]
+    Description=tee-indexer
+    Requires=docker.service
+    After=docker.service network-online.target
+    Wants=network-online.target
+
+    [Service]
+    Restart=always
+    RestartSec=5
+    ExecStartPre=-/usr/bin/docker rm -f tee-indexer
+    ExecStartPre=/usr/bin/docker pull ${local.indexer_image}
+    ExecStart=/usr/bin/docker run --rm --name tee-indexer \
+      --publish ${local.health_port}:${local.health_port} \
+      --volume /etc/tee-indexer/config.toml:/app/config.toml:ro \
+      ${local.indexer_image}
+    ExecStop=/usr/bin/docker stop tee-indexer
+
+    [Install]
+    WantedBy=multi-user.target
   EOT
 
-  # Cloud-init configuration to write the config file
+  # Cloud-init writes the config and the unit, then starts it. write_files
+  # always completes before runcmd, so the bind-mount source exists before
+  # `docker run` reads it.
   cloud_config = <<-EOT
     #cloud-config
     write_files:
     - path: /etc/tee-indexer/config.toml
-      permissions: 0644
+      permissions: '0644'
       owner: root
       encoding: b64
       content: ${base64encode(local.config_toml)}
+    - path: /etc/systemd/system/tee-indexer.service
+      permissions: '0644'
+      owner: root
+      encoding: b64
+      content: ${base64encode(local.tee_indexer_service)}
+
+    runcmd:
+    - systemctl daemon-reload
+    - systemctl enable --now tee-indexer.service
   EOT
 }
 
@@ -85,8 +115,7 @@ resource "google_compute_instance" "tee_indexer" {
   tags = var.cli ? ["tee-indexer-cli"] : ["tee-indexer"]
 
   metadata = {
-    gce-container-declaration = local.container_declaration
-    user-data                 = local.cloud_config
+    user-data = local.cloud_config
   }
 }
 

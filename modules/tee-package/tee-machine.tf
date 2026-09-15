@@ -57,7 +57,7 @@ resource "google_compute_instance" "tee_machine" {
     "tee-container-log-redirect"   = var.tee_machine_debug_mode # Only allowed in debug
     "tee-monitoring-memory-enable" = var.tee_machine_debug_mode
     "tee-env-LOG_LEVEL"            = "INFO"
-    "tee-env-PROXY_URL"            = "http://${google_compute_instance.tee_proxy.network_interface[0].network_ip}:6661"
+    "tee-env-PROXY_URL"            = "http://${google_compute_instance.tee_proxy.network_interface[0].network_ip}:${local.internal_port}"
     "tee-env-INITIAL_OWNER"        = var.initial_owner
     "tee-env-EXTENSION_ID"         = var.extension_id
     # tee-node signs every action result (and vote-hash/backup signing) with

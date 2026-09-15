@@ -89,13 +89,17 @@ exactly which subsystem to go look at next.
 
 ## 3. Logs
 
-**tee-proxy** (Container-Optimized OS VM, plain Docker):
+**tee-proxy** (Container-Optimized OS VM, container run by a systemd unit):
 
 ```
 gcloud compute ssh tee-proxy-coston --zone europe-west1-b --project flare-network-sandbox --tunnel-through-iap
-docker ps                      # find the container
-docker logs -f <container-id>
+journalctl -u tee-proxy -f
 ```
+
+`systemctl status tee-proxy` shows whether the unit itself is healthy - a
+container that is crash-looping shows up as repeated restarts there before it
+shows up in the application log. `docker logs -f tee-proxy` still works too;
+the container is named, so you no longer need `docker ps` to find its id.
 
 Look for:
 - `"connecting to database: %v"` (panic) - can't reach the indexer's Cloud SQL instance
@@ -122,13 +126,17 @@ tee-proxy is actually listening on 6661. tee-node itself doesn't emit an
 explicit attestation-success line; look on the tee-proxy side instead
 (above) for confirmation that an info exchange completed.
 
-**tee-indexer** (also a plain COS VM):
+**tee-indexer** (also a COS VM with a systemd unit):
 
 ```
 gcloud compute ssh tee-indexer-coston --zone europe-west1-b --project flare-network-sandbox --tunnel-through-iap
-docker ps
-docker logs -f <container-id>
+journalctl -u tee-indexer -f
+curl -s -o /dev/null -w '%{http_code}
+' localhost:8080/health
 ```
+
+`/health` is the quickest answer to "is it caught up": 503 while startup
+catchup is still running, 200 once continuous indexing has begun.
 
 Errors here (RPC failures against the `chain_rpc_endpoint`, DB write
 failures) are the most common root cause of tee-proxy's indexer-delay
@@ -137,9 +145,19 @@ indexer.
 
 ## 4. Supporting infra sanity checks
 
-**Indexer DB catching up:** the indexer's DB is private-IP-only, so query it
-from the indexer VM rather than your laptop. Get credentials without adding
-a Terraform output:
+**Indexer caught up?** Ask the indexer itself first - `/health` on port 8080
+answers in one call (503 during startup catchup, 200 once continuous indexing
+has begun):
+
+```
+gcloud compute ssh tee-indexer-coston --zone europe-west1-b --project flare-network-sandbox --tunnel-through-iap
+curl -s -o /dev/null -w '%{http_code}
+' localhost:8080/health
+```
+
+That tells you *whether* it is caught up, not *how far behind* it is. For the
+latter, query the database. It is private-IP-only, so do it from the indexer
+VM rather than your laptop; get credentials without adding a Terraform output:
 
 ```
 cd envs/coston-sandbox
@@ -151,12 +169,13 @@ Then from inside the tee-indexer VM (it has Docker, no local mysql client):
 
 ```
 docker run --rm -it --network host mysql:8 mysql -h <hostname> -u indexer-reader -p<password> indexer
-mysql> SHOW TABLES;
-mysql> -- inspect whichever table has a block-number/timestamp column for recency
+mysql> SELECT MAX(number) FROM blocks;
+mysql> SELECT * FROM states;
 ```
 
-If the most recent indexed block is far behind Coston's current tip, that's
-your indexer-delay problem, not a tee-proxy bug.
+`blocks` is the indexed chain data; `states` holds the indexer's own progress
+rows. If the most recent indexed block is far behind Coston's current tip,
+that's your indexer-delay problem, not a tee-proxy bug.
 
 **Redis:** `/ready` already `PING`s it, so that's normally sufficient. If
 you want to check by hand, it's unauthenticated and only reachable inside

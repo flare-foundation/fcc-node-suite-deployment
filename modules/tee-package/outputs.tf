@@ -4,13 +4,13 @@ output "tee_proxy_external_ip" {
 }
 
 output "tee_proxy_external_endpoint" {
-  description = "External endpoint for tee-proxy (port 6662)"
-  value       = "http://${google_compute_address.tee_proxy_ip.address}:6662"
+  description = "External endpoint for tee-proxy"
+  value       = "http://${google_compute_address.tee_proxy_ip.address}:${local.external_port}"
 }
 
 output "tee_proxy_internal_endpoint" {
-  description = "Internal endpoint for tee-proxy (port 6661)"
-  value       = "http://${google_compute_instance.tee_proxy.network_interface[0].network_ip}:6661"
+  description = "Internal endpoint for tee-proxy"
+  value       = "http://${google_compute_instance.tee_proxy.network_interface[0].network_ip}:${local.internal_port}"
 }
 
 output "tee_machine_name" {

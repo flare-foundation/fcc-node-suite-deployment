@@ -72,9 +72,10 @@ the stack.
 - **tee-machine has no public IP by design** — even with debug mode on,
   you reach it via `gcloud compute ssh --tunnel-through-iap`, not a
   regular SSH.
-- Both tee-machine and tee-proxy log to their serial console and to
-  `journalctl`/`docker logs` respectively — start there before assuming
-  something's broken.
+- tee-machine logs to its serial console; tee-proxy and tee-indexer each run
+  their container from a systemd unit, so `journalctl -u tee-proxy` /
+  `journalctl -u tee-indexer` is where their logs are. Start there before
+  assuming something's broken.
 - `modules/tee-package/README.md` has more detail on what each variable
   does and why the defaults are what they are.
 - `TESTING.md` walks through verifying a fresh deployment end to end -

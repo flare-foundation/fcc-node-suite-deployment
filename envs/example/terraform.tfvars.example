@@ -10,7 +10,7 @@ project = "my-gcp-project"
 #   roles/redis.admin
 #   roles/compute.instanceAdmin.v1
 #   roles/confidentialcomputing.workloadUser (required for tee-machine to run as a
-#     Confidential Space workload at all - see OPEN_QUESTIONS.md)
+#     Confidential Space workload at all)
 # The images below are public (GHCR), so no extra registry access is needed
 # for them. If you use an image from a private registry instead, granting
 # this service account access to it is on you.

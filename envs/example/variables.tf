@@ -29,7 +29,7 @@ variable "tee_proxy_docker_image" {
 }
 
 variable "tee_proxy_private_key" {
-  description = "Signing private key for tee-proxy (see modules/tee-package/variables.tf and OPEN_QUESTIONS.md)"
+  description = "Signing private key for tee-proxy. Generate with ../../scripts/generate-key.sh; its address is also this package's initial_owner. See modules/tee-package/variables.tf."
   type        = string
   sensitive   = true
 }

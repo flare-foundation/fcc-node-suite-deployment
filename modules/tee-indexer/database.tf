@@ -1,6 +1,6 @@
 # Generated here rather than requiring the caller to pre-create Secret Manager
-# secrets by hand (upstream's approach - see MarketplaceTODO.md-era notes in
-# OPEN_QUESTIONS.md) - a fresh GCP project has no such secrets to point at.
+# secrets by hand (upstream's approach) - a fresh GCP project has no such
+# secrets to point at.
 resource "random_password" "db_admin" {
   length  = 24
   special = false

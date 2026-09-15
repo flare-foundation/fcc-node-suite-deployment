@@ -18,16 +18,17 @@ No Kubernetes cluster required - both are plain GCE VMs.
   access to Secret Manager, Cloud SQL, GCS, and Memorystore in the project.
 - A `tee_indexer_database` value - normally `module.tee_indexer.database_config`
   from the sibling `tee-indexer` module.
-- A tee-proxy signing private key you generate/manage yourself (see
-  `variable "tee_proxy_private_key"` and `/OPEN_QUESTIONS.md` at the repo
-  root for why this module doesn't generate one for you).
+- A tee-proxy signing private key you generate/manage yourself with
+  `/scripts/generate-key.sh`. Its address is also this package's
+  `initial_owner` - one keypair, two variables.
 
 ## Notable defaults
 
 `chain_id`, `flare_systems_manager`, `relay`, and `voter_registry` default
 to Coston2's current values. If you're deploying against a different Flare
-network (or the same network after a contract redeploy), override them -
-see `/OPEN_QUESTIONS.md` for the caveat on how current these defaults are.
+network (or the same network after a contract redeploy), override them.
+Check they are still current before relying on them; contract redeploys
+happen and these values are a snapshot.
 
 `tee_machine_debug_mode` (default `false`) adds a public IP + SSH/node-exporter
 access to tee-machine and SSH access to tee-proxy - useful when standing

@@ -99,3 +99,79 @@ Space VM also removes operator SSH to tee-proxy, which has no attestation postur
 protect. Separate flags would be better. It bites when tee-machine restarts: tee-proxy
 keeps serving its cached payload and never re-pairs, and with debug off there is no way
 to restart it except replacing the VM.
+
+## 6. The indexer image floats on `:main`, which is now 2.x
+
+`modules/tee-indexer/indexer.tf:23` pins
+`ghcr.io/flare-foundation/flare-system-c-chain-indexer:main`. That tag is currently
+`v2.0.2` (2026-09-04); `v2.0.0` landed 2026-08-18 ([changelog][indexer-changelog]). So the same commit of this repo
+deployed either side of that date gets a different major version of the indexer, and
+nothing in the plan says so. The repo's `build-docker.yml` publishes `v*` and `latest`
+alongside `main`, so pinning `:v2.0.2` costs nothing.
+
+The config survives the jump as-is: `indexer.mode` defaults to `full`, and the one
+renamed key that hard-fails startup — `indexer.num_parallel_req` -> `indexer.rpc_concurrency`
+— is already spelled the 2.x way at `config.toml.tftpl:23`. (The other rename,
+`timeout.timeout_millis` -> `timeout.rpc_timeout_millis`, doesn't apply; there's no
+`[timeout]` block.) So this is an upgrade to take deliberately, not an outage.
+
+### What 2.x is worth on full mode alone
+
+- `GET /health` on port 8080: 503 during startup catchup, 200 once continuous indexing
+  begins. That replaces the "SSH in and query the DB by hand" dance in TESTING.md
+  section 4, and gives the systemd unit from note 1 a real readiness check — it needs
+  `-p 8080:8080` there, since Konlet's port publishing is what's being replaced.
+- `rpc_concurrency`, `batch_size` and `log_range` are now independent, and the
+  "uneven split silently drops the batch's tail blocks" bug is fixed. The divisibility
+  reasoning in the comment at `config.toml.tftpl:26-28` is obsolete — `log_range = 25`
+  is still right for the 30-block public-RPC `eth_getLogs` cap, but that's the only
+  reason left for it. `rpc_concurrency` is also now a process-wide ceiling rather than
+  a per-fan-out limit, so the module's `10` means less node load than it used to.
+- `rpc_timeout_millis` defaults to 5s instead of 1s, and continuous indexing fetches
+  its `collect_logs` filters concurrently instead of one round trip each per block
+  (v2.0.1). Between them these plausibly account for some of the public-RPC slowness
+  TESTING.md's symptom table currently writes off as inherent rate limiting — worth
+  re-measuring before accepting that entry as final.
+- v2.0.2 indexes `Relay` at both its deployments ahead of the redeploy. This module
+  hardcodes one `relay` address (`modules/tee-indexer/variables.tf`), so on full mode
+  the cutover will silently leave a gap in signing policies on one side of it.
+
+### FSP mode would dissolve notes 3 and half of 5, but needs checking first
+
+`mode = "fsp"` builds the FSP filters in, resolves addresses by name through the
+ContractRegistry, and derives both retention boundaries from on-chain reward epochs
+instead of a block number or a wall clock ([upstream README][indexer-readme]). `indexer.start_index` and `db.history_drop`
+are ignored entirely, which retires `indexer_start_index` as a variable, the whole of
+note 3, and the `drop_table_at_start` half of note 5 — moving the window backwards
+stops meaning "drop the database over SSH". The `relay` / `voter_registry` /
+`flare_systems_manager` variables would stay only for tee-package.
+
+The catch: FSP's selective indexing backfills **events** below the fully-indexed
+window, not transactions, and tee-proxy reads two things from the `transactions` table
+that the built-in FSP collectors don't cover —
+
+- FlareSystemsManager `signNewSigningPolicy` (`6b4c7bd6`), which `pkg/policy/signatures.go`
+  extracts policy signatures from;
+- VoterRegistry `registerVoter` (`8f7d0957`), used in `pkg/policy/init.go`.
+
+Both must be kept as explicit `[[indexer.collect_transactions]]` entries — 2.x merges
+user entries with the built-ins, so that part is free. What isn't free is the window:
+`history_epochs = 0`, the setting the upstream README recommends for providers, fully
+indexes only the last ~1 hour, while `initial_signing_policy_offset = 2`
+(`modules/tee-package/templates/tee-proxy/config.toml.tftpl:5`) means tee-proxy wants a
+policy from two reward epochs back — ~14 hours on Coston/Coston2, ~7 days on
+Flare/Songbird. So `history_epochs` has to cover at least that; 3 is the obvious
+starting point, but this is the one thing to confirm against a real deploy before
+switching, because the failure mode is a policy that won't initialize rather than
+anything the indexer reports.
+
+Note for either mode: 2.x adds a unique index on `states.name`, and `AutoMigrate`
+refuses to create it if an existing database holds duplicates. Check before upgrading
+in place:
+
+```sql
+SELECT name, COUNT(*) FROM states GROUP BY name HAVING COUNT(*) > 1;
+```
+
+[indexer-changelog]: https://github.com/flare-foundation/flare-system-c-chain-indexer/blob/v2.0.2/CHANGELOG.md
+[indexer-readme]: https://github.com/flare-foundation/flare-system-c-chain-indexer/blob/v2.0.2/README.md

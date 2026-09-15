@@ -70,7 +70,7 @@ variable "voter_registry" {
 }
 
 variable "start_index" {
-  description = "Block height the indexer starts collecting from. Default is a Coston2 value that predates this module - verify it's still reasonably close to current chain height before relying on it, or override with a recent block for the network you're deploying against. Only takes effect on a fresh DB if history_drop_seconds is 0 - otherwise the indexer computes its own (more recent) start from history_drop_seconds and ignores this entirely."
+  description = "Block height the indexer starts collecting from. Must be at or before the VotePowerBlockSelected block of the epoch tee-proxy's initial_signing_policy_offset selects - two reward epochs back from the newest signing policy. At or before the Relay's SigningPolicyInitialized log is necessary but not sufficient: policy construction also recovers voter public keys from VoterRegistered events on VoterRegistry, which are emitted earlier, and starting between the two panics tee-proxy on loop with 'invalid number of logs'. Default is a Coston2 value that predates this module - verify it's still reasonably close to current chain height before relying on it. Only takes effect on a fresh DB if history_drop_seconds is 0 - otherwise the indexer computes its own (more recent) start from history_drop_seconds and ignores this entirely. Moving it backwards needs drop_table_at_start."
   type        = number
   default     = 46000000
 }

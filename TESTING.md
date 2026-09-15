@@ -62,6 +62,10 @@ Coston. If they're still empty after a long wait, first confirm (step 4)
 that the indexer has actually caught up to chain tip before assuming
 something's broken.
 
+Note that starting at the policy log is **not sufficient** - see the
+`invalid number of logs` row in the symptom table for where the start block
+actually has to sit.
+
 If `curl` returns nothing / connection refused: tee-proxy isn't up yet, or
 the external firewall/IP is wrong - check `terraform output
 tee_proxy_external_endpoint` and tee-proxy's logs (step 3).
@@ -251,7 +255,8 @@ If you are working on the box directly rather than through Terraform:
 | `/info` returns data but signing-policy fields stay zero | indexer hasn't seen a `SigningPolicyInitialized` log yet, or hasn't caught up | `/ready` indexer-delay check, tee-indexer logs, indexer DB row recency |
 | `/info` `attestation`/`dataSignature`/`codeHash` empty | tee-machine hasn't attested / isn't reachable from tee-proxy | tee-machine serial console, tee-proxy's `"fetching initial TEE info"` logs |
 | tee-proxy panics `error signing: could not sign` / `/info` signature fields are 0 bytes | tee-node has no `CHAIN_ID` - it signs nothing until `ChainID()` succeeds (`tee-env-CHAIN_ID` in `tee-machine.tf`) | tee-machine serial console for `router.go:164 ... error signing`; confirm `tee-env-CHAIN_ID` is in the instance's metadata |
-| tee-proxy panics `initializing signing policy: ... no signing policy logs found in db` | indexer's `start_index` is after the Relay's last `SigningPolicyInitialized` log, so that event was never indexed | find the actual block via a block explorer's log API (30-block `eth_getLogs` RPC caps make scanning for it directly impractical), set `start_index` at or before it |
+| tee-proxy panics `initializing signing policy: ... no signing policy logs found in db` | indexer's `start_index` is after the Relay's last `SigningPolicyInitialized` log, so that event was never indexed | see the row below - starting at that log is necessary but not sufficient |
+| tee-proxy panics on loop with `recovering pub key for 0x...: invalid number of logs` | `start_index` sits between the voter registrations and the policy log. Building the policy recovers each voter's public key from the `v,r,s` in their `VoterRegistered` event on VoterRegistry, which is emitted *earlier* than `SigningPolicyInitialized` on Relay | start at or before the `VotePowerBlockSelected` block of the epoch `initial_signing_policy_offset` selects - two epochs back from the newest policy. (`registerVoter` requires a non-zero `newSigningPolicyInitializationStartBlockNumber` and `votePowerBlock`, set at `RandomAcquisitionStarted` and `VotePowerBlockSelected`, so that block is the earliest a `VoterRegistered` for the epoch can exist.) Find it via a block explorer's log API - 30-block `eth_getLogs` caps make scanning for it directly impractical. Moving `start_index` backwards also needs the database dropped: `scripts/redeploy-indexer.sh --drop-db` |
 | indexer makes little/no progress, repeated `Backoff exhausted: ... requested too many blocks ..., maximum is set to 30` | `log_range` unset/too wide for this RPC's `eth_getLogs` block-range cap | `modules/tee-indexer/templates/indexer/config.toml.tftpl`'s `[indexer]` block - `log_range` must be <= the RPC's cap |
 | indexer progresses but very slowly (~1000 blocks per 2-3 minutes) against `coston-api.flare.network` | largely public-RPC rate limiting. **Re-measure before accepting this** - the figure was taken on indexer 1.x, and v2.0.1 both fixed continuous indexing issuing one `eth_getLogs` per filter serially and raised the per-attempt RPC timeout default from 1s to 5s | if it is still slow on v2: let it run, or get the deploying project allowlisted for less-limited public RPC access (Cloud Armor IP/API-key allowlist on Flare's side) - the `*.svc.cluster.local` internal validator RPC infra's own staging env uses isn't reachable from an external project without new Private Service Connect plumbing |
 | `/ready` fails on Redis | Redis instance not up / network peering issue | Redis instance status in GCP console, `redis-cli ping` from tee-proxy |

@@ -1,0 +1,10 @@
+# Terraform files must check out with LF.
+#
+# HCL heredocs preserve line endings verbatim, and two of these files render
+# systemd units into cloud-init. With CRLF, the "\" line continuations are
+# followed by a CR instead of ending the line, and the last argument of
+# ExecStart picks up a trailing CR - so the unit silently fails to start its
+# container. Same reasoning for the templates and the operator scripts.
+*.tf      text eol=lf
+*.tftpl   text eol=lf
+*.sh      text eol=lf

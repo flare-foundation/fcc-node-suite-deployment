@@ -80,3 +80,9 @@ variable "history_drop_seconds" {
   type        = number
   default     = null
 }
+
+variable "drop_table_at_start" {
+  description = "Drop and recreate the indexer's tables when the container starts. Needed to move start_index backwards - the indexer otherwise resumes from its last state row and never re-reads earlier blocks. Leave false: set true for exactly one replace of the instance, then set it back, or every subsequent restart wipes the database. scripts/redeploy-indexer.sh --drop-db does that two-step for you."
+  type        = bool
+  default     = false
+}

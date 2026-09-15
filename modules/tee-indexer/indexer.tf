@@ -26,6 +26,7 @@ locals {
     voter_registry        = var.voter_registry
     start_index           = var.start_index
     history_drop_seconds  = var.history_drop_seconds
+    drop_table_at_start   = var.drop_table_at_start
   })
 
   # systemd unit that runs the indexer container, replacing the Konlet

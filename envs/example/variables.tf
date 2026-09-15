@@ -33,3 +33,9 @@ variable "tee_proxy_private_key" {
   type        = string
   sensitive   = true
 }
+
+variable "indexer_drop_table_at_start" {
+  description = "Drop and recreate the indexer's tables on container start. Needed to move the indexer's start block backwards. Set true for exactly one instance replace, then set it back to false - otherwise every restart wipes the database. scripts/redeploy-indexer.sh --drop-db does that two-step for you."
+  type        = bool
+  default     = false
+}

@@ -91,6 +91,7 @@ module "tee_indexer" {
   zone                  = var.zone
   network               = google_compute_network.tee.self_link
   service_account_email = var.service_account_email
+  drop_table_at_start   = var.indexer_drop_table_at_start
   chain_rpc_endpoint    = local.chain_rpc_endpoint
   flare_systems_manager = local.flare_systems_manager
   relay                 = local.relay

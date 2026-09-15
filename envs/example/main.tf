@@ -68,6 +68,7 @@ module "tee_indexer" {
   zone                  = var.zone
   network               = google_compute_network.tee.self_link
   service_account_email = var.service_account_email
+  drop_table_at_start   = var.indexer_drop_table_at_start
 
   depends_on = [google_service_networking_connection.private_service_access]
 }

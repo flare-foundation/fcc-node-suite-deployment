@@ -33,8 +33,19 @@ You'll need:
    ./scripts/generate-key.sh
    ```
    This prints an address and private key to your terminal and writes
-   nothing to disk — copy the private key somewhere safe, you'll need it
-   in a minute.
+   nothing to disk — copy both somewhere safe, you'll need them in a minute.
+
+   The two halves belong to **one keypair**, and both go into your tfvars:
+   the private key as `tee_proxy_private_key`, and the matching address as
+   the package's `initial_owner`. They are not two independent secrets.
+   (`initial_owner` is the address tee-node treats as the machine's owner —
+   the identity allowed to configure it before any governance is in place.)
+
+   The other identity variable, `extension_id`, is **not** something you
+   choose: it is assigned per extension, and identifies which extension this
+   machine runs. Leave it at the module default (all zeros) until you have
+   been given one — `/info` reporting an all-zero `machineData.extensionId`
+   is correct in that case, not a fault.
 
 ## Setting it up
 

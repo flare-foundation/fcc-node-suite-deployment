@@ -107,3 +107,102 @@ variable "voter_registry" {
   type        = string
   default     = "0x6a0AF07b7972177B176d3D422555cbc98DfDe914" # Coston2
 }
+
+# Governance. Registering a machine needs at least governance_signers +
+# governance_threshold; without them tee-node has nothing to check a signed
+# SET_MACHINE_PATH_LIST against and rejects every list update.
+#
+# The validations below mirror tee-proxy's own Governance.validate()
+# (pkg/config/config.go) so a bad combination fails at plan time rather than at
+# container start. Semantics per tee-node/docs/configuration.md.
+
+variable "machine_path_manager" {
+  description = "MachinePathManager contract address. The zero address (or \"\", which renders as zero) disables the machine-path-list service entirely: lists are never updated, and the governance variables below must then be left unset too - tee-proxy rejects a [governance] block without a non-zero manager."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.machine_path_manager == "" || can(regex("^0x[0-9a-fA-F]{40}$", var.machine_path_manager))
+    error_message = "machine_path_manager must be a 0x-prefixed 20-byte hex address, or \"\" to disable the machine-path-list service."
+  }
+}
+
+variable "governance_signers" {
+  description = "Addresses authorized to sign SET_MACHINE_PATH_LIST. For Safe-backed governance this is the Safe owners' snapshot. Set together with governance_threshold; leave empty for direct-signature governance, where tee-proxy recovers the on-chain signatures itself."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for s in var.governance_signers : can(regex("^0x[0-9a-fA-F]{40}$", s))])
+    error_message = "Every governance_signers entry must be a 0x-prefixed 20-byte hex address."
+  }
+
+  validation {
+    condition     = !contains([for s in var.governance_signers : lower(s)], "0x0000000000000000000000000000000000000000")
+    error_message = "governance_signers must not contain the zero address."
+  }
+
+  validation {
+    condition     = length(var.governance_signers) == length(distinct([for s in var.governance_signers : lower(s)]))
+    error_message = "governance_signers must not repeat an address - the threshold counts distinct signers."
+  }
+
+  validation {
+    condition     = (length(var.governance_signers) > 0) == (var.governance_threshold > 0)
+    error_message = "governance_signers and governance_threshold must be set together, or both left unset."
+  }
+
+  validation {
+    condition     = var.governance_threshold <= length(var.governance_signers)
+    error_message = "governance_threshold must not exceed the number of governance_signers."
+  }
+
+  validation {
+    condition     = length(var.governance_signers) == 0 || var.machine_path_manager != ""
+    error_message = "Setting governance requires a non-zero machine_path_manager; tee-proxy rejects the config otherwise."
+  }
+}
+
+variable "governance_threshold" {
+  description = "Minimum number of distinct governance_signers signatures required per machine-path list. Must be at least 1 and at most the number of signers."
+  type        = number
+  default     = 0
+
+  validation {
+    condition     = var.governance_threshold >= 0 && floor(var.governance_threshold) == var.governance_threshold
+    error_message = "governance_threshold must be a non-negative whole number."
+  }
+}
+
+variable "governance_safe" {
+  description = "Safe-backed governance only: the governing Safe address, whose approveMachinePathList transaction can authorize a list instead of direct signatures. Set together with governance_tee_manager, or leave both empty."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.governance_safe == "" || can(regex("^0x[0-9a-fA-F]{40}$", var.governance_safe))
+    error_message = "governance_safe must be a 0x-prefixed 20-byte hex address, or \"\"."
+  }
+
+  validation {
+    condition     = (var.governance_safe == "") == (var.governance_tee_manager == "")
+    error_message = "governance_safe and governance_tee_manager must be set together, or both left empty."
+  }
+
+  validation {
+    condition     = var.governance_safe == "" || length(var.governance_signers) > 0
+    error_message = "Safe-backed governance also needs governance_signers and governance_threshold - they carry the Safe owners' snapshot and its threshold."
+  }
+}
+
+variable "governance_tee_manager" {
+  description = "Safe-backed governance only: the FlareTeeManager address the Safe's approveMachinePathList call targets. Set together with governance_safe."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.governance_tee_manager == "" || can(regex("^0x[0-9a-fA-F]{40}$", var.governance_tee_manager))
+    error_message = "governance_tee_manager must be a 0x-prefixed 20-byte hex address, or \"\"."
+  }
+}
+

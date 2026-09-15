@@ -49,7 +49,11 @@ resource "google_compute_instance" "tee_machine" {
 
   tags = var.tee_machine_debug_mode ? ["tee-machine-debug"] : ["tee-machine"]
 
-  metadata = {
+  # tee-node reads the GOVERNANCE_* vars only when they are present, so the
+  # optional ones are merged in rather than set to "" - an empty value is not
+  # the same as an absent one. tee-node's Dockerfile already lists all four in
+  # tee.launch_policy.allow_env_override, so no launch-policy change is needed.
+  metadata = merge({
     startup-script = var.tee_machine_debug_mode ? templatefile("${path.module}/templates/tee-machine-debug-init.sh", {}) : ""
 
     "tee-image-reference" = var.tee_node_docker_image
@@ -65,7 +69,15 @@ resource "google_compute_instance" "tee_machine" {
     # requires ChainID() to succeed first. Must match var.chain_id used for
     # tee-proxy's own config below.
     "tee-env-CHAIN_ID" = var.chain_id
-  }
+    },
+    length(var.governance_signers) == 0 ? {} : {
+      "tee-env-GOVERNANCE_SIGNERS"   = join(",", var.governance_signers)
+      "tee-env-GOVERNANCE_THRESHOLD" = var.governance_threshold
+    },
+    var.governance_safe == "" ? {} : {
+      "tee-env-GOVERNANCE_SAFE"        = var.governance_safe
+      "tee-env-GOVERNANCE_TEE_MANAGER" = var.governance_tee_manager
+  })
   # Metadata documentation: https://cloud.google.com/confidential-computing/confidential-space/docs/reference/metadata-variables
 }
 

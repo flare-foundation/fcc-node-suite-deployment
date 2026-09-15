@@ -21,6 +21,13 @@ locals {
     voter_registry            = var.voter_registry
     gcs_bucket                = google_storage_bucket.tee_proxy.name
     gcs_prefix                = var.deploy_suffix
+    # "" means "no machine-path-list service"; tee-proxy spells that as the
+    # zero address rather than an absent key.
+    machine_path_manager   = var.machine_path_manager == "" ? "0x0000000000000000000000000000000000000000" : var.machine_path_manager
+    governance_signers     = var.governance_signers
+    governance_threshold   = var.governance_threshold
+    governance_safe        = var.governance_safe
+    governance_tee_manager = var.governance_tee_manager
   })
 
   # PRIVATE_KEY reaches the container through a 0600 EnvironmentFile rather

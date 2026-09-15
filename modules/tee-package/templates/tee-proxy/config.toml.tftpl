@@ -16,6 +16,7 @@ log_queries = false
 flare_systems_manager = "${flare_systems_manager}"
 relay = "${relay}"
 voter_registry = "${voter_registry}"
+machine_path_manager = "${machine_path_manager}"
 
 [ports]
 internal = "${internal_port}"
@@ -34,3 +35,16 @@ bucket = "${gcs_bucket}"
 prefix = "${gcs_prefix}"
 url = ""
 credentials_file = ""
+%{ if length(governance_signers) > 0 }
+# Keep this last - it is a TOML table, so any key written below it would be
+# parsed as part of it. Emitted only when governance is configured: an unset
+# [governance] is valid and means direct-signature governance, where tee-proxy
+# recovers the on-chain signatures itself.
+[governance]
+signers = [${join(", ", formatlist("\"%s\"", governance_signers))}]
+threshold = ${governance_threshold}
+%{ if governance_safe != "" }
+safe = "${governance_safe}"
+tee_manager = "${governance_tee_manager}"
+%{ endif }
+%{ endif }

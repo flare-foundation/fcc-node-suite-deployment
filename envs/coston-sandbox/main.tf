@@ -19,15 +19,30 @@ locals {
   # is the bound because registerVoter requires a non-zero votePowerBlock, set
   # there, so no VoterRegistered for the epoch can precede it.
   #
-  # 53650000 matches flarenetwork/infra's own coston config for this same relay
-  # address (see commit 624b09537). Paired with history_drop_seconds = 0 below,
-  # which makes the indexer actually use this instead of its own
-  # history-drop-computed, more-recent start. Re-pick if this env is redeployed
-  # from scratch much later and this value has aged out of whatever history the
-  # RPC retains - and note that moving it backwards needs the indexer database
-  # dropped (scripts/redeploy-indexer.sh --drop-db), since the indexer otherwise
+  # 54280338 is reward epoch 6087's VotePowerBlockSelected, picked on
+  # 2026-09-21 when the newest signing policy was epoch 6090 - so one epoch of
+  # margin below the 6088 that offset 2 required. Earlier is always safe and
+  # only costs catch-up time; later panics.
+  #
+  # Re-pick before any fresh deploy: reward epochs roll roughly every 6300
+  # blocks (~3.5h) on Coston, so a stale value here is the difference between
+  # minutes and days of indexing. Find the current one from the explorer's log
+  # API - the 30-block eth_getLogs cap makes scanning for it over RPC
+  # impractical:
+  #
+  #   https://coston-explorer.flare.network/api?module=logs&action=getLogs
+  #     &address=<flare_systems_manager>&topic0=0xf21722dbe044a7cea0f6d81c871cae750971e36c9dd10999e46f2b46f26ac7ff
+  #     &fromBlock=<tip-100000>&toBlock=<tip>
+  #
+  # (that topic0 is VotePowerBlockSelected(uint24,uint64,uint64); take the
+  # event for newest_epoch - initial_signing_policy_offset, or older.)
+  #
+  # Paired with history_drop_seconds = 0 below, which makes the indexer
+  # actually use this instead of its own history-drop-computed, more-recent
+  # start. Moving it backwards later needs the indexer database dropped
+  # (scripts/redeploy-indexer.sh --drop-db), since the indexer otherwise
   # resumes from its last state row.
-  indexer_start_index = 53650000
+  indexer_start_index = 54280338
 }
 
 resource "google_compute_network" "tee" {

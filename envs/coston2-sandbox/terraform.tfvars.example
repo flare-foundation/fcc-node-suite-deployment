@@ -1,0 +1,8 @@
+# Copy to terraform.tfvars. project/service_account_email and both image tags
+# already default to flare-network-sandbox's real values, so only the keypair
+# needs supplying.
+
+# Both come from one run of ../../scripts/generate-key.sh - they are two halves
+# of the same keypair, not independent secrets.
+tee_proxy_private_key = "0x..."
+initial_owner         = "0x..."

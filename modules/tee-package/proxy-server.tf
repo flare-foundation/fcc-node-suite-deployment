@@ -1,4 +1,10 @@
 locals {
+  # tee-proxy's two listening ports, stated once. The rendered config, the
+  # systemd unit and the firewall rules below all read them, and tee-machine.tf
+  # builds its PROXY_URL from local.internal_port.
+  internal_port = 6661
+  external_port = 6662
+
   config_toml = templatefile("${path.module}/templates/tee-proxy/config.toml.tftpl", {
     redis_host                = google_redis_instance.tee_proxy_redis.host
     redis_port                = google_redis_instance.tee_proxy_redis.port
@@ -7,52 +13,100 @@ locals {
     indexer_database_name     = var.tee_indexer_database.databaseName
     indexer_database_user     = var.tee_indexer_database.user
     indexer_database_password = var.tee_indexer_database.password
-    internal_port             = 6661
-    external_port             = 6662
+    internal_port             = local.internal_port
+    external_port             = local.external_port
     chain_id                  = var.chain_id
     flare_systems_manager     = var.flare_systems_manager
     relay                     = var.relay
     voter_registry            = var.voter_registry
     gcs_bucket                = google_storage_bucket.tee_proxy.name
     gcs_prefix                = var.deploy_suffix
+    # "" means "no machine-path-list service"; tee-proxy spells that as the
+    # zero address rather than an absent key.
+    machine_path_manager   = var.machine_path_manager == "" ? "0x0000000000000000000000000000000000000000" : var.machine_path_manager
+    governance_signers     = var.governance_signers
+    governance_threshold   = var.governance_threshold
+    governance_safe        = var.governance_safe
+    governance_tee_manager = var.governance_tee_manager
   })
 
-  # Konlet container declaration for Container-Optimized OS
-  container_declaration = <<-EOT
-    spec:
-      containers:
-      - name: tee-proxy
-        image: ${var.tee_proxy_docker_image}
-        stdin: false
-        tty: false
-        env:
-        - name: PRIVATE_KEY
-          value: ${var.tee_proxy_private_key}
-        ports:
-        - containerPort: 6661
-          hostPort: 6661
-        - containerPort: 6662
-          hostPort: 6662
-        volumeMounts:
-        - mountPath: /app/config/config.toml
-          name: config
-          readOnly: true
-      volumes:
-      - name: config
-        hostPath:
-          path: /etc/tee-proxy/config.toml
-      restartPolicy: Always
+  # PRIVATE_KEY reaches the container through a 0600 EnvironmentFile rather
+  # than the unit itself, so it is not visible in `systemctl cat tee-proxy`
+  # or in the process table.
+  tee_proxy_env = <<-EOT
+    PRIVATE_KEY=${var.tee_proxy_private_key}
   EOT
 
-  # Cloud-init configuration to write the config file
+  # systemd unit that runs the tee-proxy container. This replaces the Konlet
+  # `gce-container-declaration` metadata key, which GCE stopped accepting on
+  # 2026-07-31 ("the option to deploy a container during VM instance creation
+  # that relies on a container startup agent is discontinued"). Instances
+  # created before then keep running, so the breakage only shows up on the
+  # first apply into a project that has none.
+  # https://docs.cloud.google.com/compute/docs/containers/migrate-containers
+  #
+  # Ports are published with --publish rather than --network host, as Konlet
+  # did: COS runs its iptables INPUT chain with policy DROP, so a host-networked
+  # listener is reachable on localhost but not from tee-machine or the internet.
+  #
+  # The images this module is pointed at are public (ghcr.io), so `docker pull`
+  # needs no credentials. A private Artifact Registry image would need an
+  # `ExecStartPre=/usr/bin/docker-credential-gcr configure-docker --registries=...`
+  # ahead of the pull - Konlet handled registry auth for us.
+  tee_proxy_service = <<-EOT
+    [Unit]
+    Description=tee-proxy
+    Requires=docker.service
+    After=docker.service network-online.target
+    Wants=network-online.target
+
+    [Service]
+    Restart=always
+    RestartSec=5
+    EnvironmentFile=/etc/tee-proxy/tee-proxy.env
+    ExecStartPre=-/usr/bin/docker rm -f tee-proxy
+    ExecStartPre=/usr/bin/docker pull ${var.tee_proxy_docker_image}
+    ExecStart=/usr/bin/docker run --rm --name tee-proxy \
+      --env PRIVATE_KEY \
+      --publish ${local.internal_port}:${local.internal_port} \
+      --publish ${local.external_port}:${local.external_port} \
+      --volume /etc/tee-proxy/config.toml:/app/config/config.toml:ro \
+      ${var.tee_proxy_docker_image}
+    ExecStop=/usr/bin/docker stop tee-proxy
+
+    [Install]
+    WantedBy=multi-user.target
+  EOT
+
+  # Cloud-init writes the config, the key and the unit, then starts it. All
+  # three go in base64 so nothing in the rendered values can break the YAML.
+  #
+  # write_files always completes before runcmd, which is what guarantees the
+  # bind-mount source exists before `docker run` reads it. Under Konlet the two
+  # raced, and losing that race left Docker to create /etc/tee-proxy/config.toml
+  # as an empty directory instead ("read config.toml: is a directory").
   cloud_config = <<-EOT
     #cloud-config
     write_files:
     - path: /etc/tee-proxy/config.toml
-      permissions: 0644
+      permissions: '0644'
       owner: root
       encoding: b64
       content: ${base64encode(local.config_toml)}
+    - path: /etc/tee-proxy/tee-proxy.env
+      permissions: '0600'
+      owner: root
+      encoding: b64
+      content: ${base64encode(local.tee_proxy_env)}
+    - path: /etc/systemd/system/tee-proxy.service
+      permissions: '0644'
+      owner: root
+      encoding: b64
+      content: ${base64encode(local.tee_proxy_service)}
+
+    runcmd:
+    - systemctl daemon-reload
+    - systemctl enable --now tee-proxy.service
   EOT
 }
 
@@ -75,10 +129,12 @@ resource "google_secret_manager_secret_iam_member" "proxy_config_access" {
 }
 
 # tee-proxy's signing key. Stored here for auditability/rotation even though
-# it also ends up in plain-text instance metadata below (Konlet has no other
-# way to pass container env vars, and tee-proxy runs on a plain COS VM rather
-# than inside Confidential Space, so there's no attestation-based secret
-# unwrapping available to it either).
+# the VM gets it from instance metadata instead: the cloud-init above carries
+# it into a 0600 EnvironmentFile, but user-data is itself plain-text metadata,
+# so that narrows who can read the file on disk without making the key any less
+# visible to anyone with compute.instances.get. tee-proxy runs on a plain COS
+# VM rather than inside Confidential Space, so there is no attestation-based
+# secret unwrapping available to it either.
 resource "google_secret_manager_secret" "proxy_private_key" {
   secret_id = "tee-proxy-private-key-${var.deploy_suffix}"
   replication {
@@ -132,12 +188,11 @@ resource "google_compute_instance" "tee_proxy" {
   tags = ["tee-proxy"]
 
   metadata = {
-    gce-container-declaration = local.container_declaration
-    user-data                 = local.cloud_config
+    user-data = local.cloud_config
   }
 }
 
-# Firewall rule for tee-proxy external port (6662)
+# Firewall rule for tee-proxy's external port
 resource "google_compute_firewall" "allow_tee_proxy_external" {
   name          = join("-", compact(["allow-tee-proxy-external", var.deploy_suffix]))
   network       = var.network
@@ -148,13 +203,13 @@ resource "google_compute_firewall" "allow_tee_proxy_external" {
 
   allow {
     protocol = "tcp"
-    ports    = ["6662"]
+    ports    = [local.external_port]
   }
 
-  description = "Allow external port 6662 for tee-proxy"
+  description = "Allow external port ${local.external_port} for tee-proxy"
 }
 
-# Firewall rule for tee-proxy internal port (6661) - only from tee-machine
+# Firewall rule for tee-proxy's internal port - only from tee-machine
 resource "google_compute_firewall" "allow_tee_proxy_internal" {
   name          = join("-", compact(["allow-tee-proxy-internal", var.deploy_suffix]))
   network       = var.network
@@ -165,15 +220,21 @@ resource "google_compute_firewall" "allow_tee_proxy_internal" {
 
   allow {
     protocol = "tcp"
-    ports    = ["6661"]
+    ports    = [local.internal_port]
   }
 
-  description = "Allow internal port 6661 for tee-proxy from tee-machine only"
+  description = "Allow internal port ${local.internal_port} for tee-proxy from tee-machine only"
 }
 
-# Firewall rule for SSH access to tee-proxy (debug mode)
+# Firewall rule for operator SSH access to tee-proxy.
+#
+# Deliberately not gated on tee_machine_debug_mode. tee-proxy is a plain COS VM
+# with no attestation posture to protect, and coupling the two meant turning off
+# debug on the Confidential Space VM also removed the only way to reach the
+# proxy - which bites exactly when you need it, since a restarted tee-machine
+# leaves tee-proxy serving its cached payload and never re-pairing.
 resource "google_compute_firewall" "allow_tee_proxy_ssh" {
-  count = var.tee_machine_debug_mode ? 1 : 0
+  count = var.allow_tee_proxy_ssh ? 1 : 0
 
   name      = join("-", compact(["allow-tee-proxy-ssh", var.deploy_suffix]))
   network   = var.network
@@ -189,5 +250,5 @@ resource "google_compute_firewall" "allow_tee_proxy_ssh" {
     ports    = ["22"]
   }
 
-  description = "Allow SSH access to tee-proxy for debugging in debug mode, via IAP only"
+  description = "Allow operator SSH access to tee-proxy, via IAP only"
 }

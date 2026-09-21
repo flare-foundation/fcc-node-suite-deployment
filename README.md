@@ -33,8 +33,19 @@ You'll need:
    ./scripts/generate-key.sh
    ```
    This prints an address and private key to your terminal and writes
-   nothing to disk — copy the private key somewhere safe, you'll need it
-   in a minute.
+   nothing to disk — copy both somewhere safe, you'll need them in a minute.
+
+   The two halves belong to **one keypair**, and both go into your tfvars:
+   the private key as `tee_proxy_private_key`, and the matching address as
+   the package's `initial_owner`. They are not two independent secrets.
+   (`initial_owner` is the address tee-node treats as the machine's owner —
+   the identity allowed to configure it before any governance is in place.)
+
+   The other identity variable, `extension_id`, is **not** something you
+   choose: it is assigned per extension, and identifies which extension this
+   machine runs. Leave it at the module default (all zeros) until you have
+   been given one — `/info` reporting an all-zero `machineData.extensionId`
+   is correct in that case, not a fault.
 
 ## Setting it up
 
@@ -72,9 +83,10 @@ the stack.
 - **tee-machine has no public IP by design** — even with debug mode on,
   you reach it via `gcloud compute ssh --tunnel-through-iap`, not a
   regular SSH.
-- Both tee-machine and tee-proxy log to their serial console and to
-  `journalctl`/`docker logs` respectively — start there before assuming
-  something's broken.
+- tee-machine logs to its serial console; tee-proxy and tee-indexer each run
+  their container from a systemd unit, so `journalctl -u tee-proxy` /
+  `journalctl -u tee-indexer` is where their logs are. Start there before
+  assuming something's broken.
 - `modules/tee-package/README.md` has more detail on what each variable
   does and why the defaults are what they are.
 - `TESTING.md` walks through verifying a fresh deployment end to end -
@@ -99,5 +111,14 @@ envs/
   example/         generic template - bring your own project
   coston-sandbox/  concrete example targeting Coston
 scripts/
-  generate-key.sh  generates a throwaway signing keypair
+  generate-key.sh       generates a throwaway signing keypair
+  redeploy-proxy.sh     replaces tee-proxy (and tee-machine with it)
+  redeploy-indexer.sh   replaces tee-indexer, optionally wiping its database
+  flush-redis.sh        drains tee-proxy's Redis queue
 ```
+
+The three redeploy/flush scripts are run from an env directory, e.g.
+`cd envs/coston-sandbox && ../../scripts/redeploy-proxy.sh`. A config change
+needs one of them rather than a plain `terraform apply`: cloud-init runs only
+on first boot and Confidential Space reads its metadata only at boot, so an
+updated config on a running VM is never picked up. See `TESTING.md` section 5.

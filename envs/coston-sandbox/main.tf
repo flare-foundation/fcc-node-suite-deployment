@@ -7,15 +7,26 @@ locals {
   relay                 = "0xEcD0B60Ea5E01e4D0bFd621c8920B40A32389b83"
   voter_registry        = "0x42F4526BFC6f892DB515a832a52eFc9edFADf6c0"
 
-  # Must be at or before the current Relay's SigningPolicyInitialized log,
-  # or tee-proxy has nothing to bootstrap its signing policy from ("no
-  # signing policy logs found in db") no matter how caught-up the indexer
-  # otherwise is. 53650000 matches flarenetwork/infra's own coston config
-  # for this same relay address (see commit 624b09537), which is known to
-  # cover that log. Paired with history_drop_seconds = 0 below (which makes
-  # the indexer actually use this instead of its own history-drop-computed,
-  # more-recent start). Re-pick if this env is redeployed from scratch much
-  # later and this value has aged out of whatever history the RPC retains.
+  # Must be at or before the VotePowerBlockSelected block of the epoch
+  # initial_signing_policy_offset selects - two reward epochs back from the
+  # newest signing policy.
+  #
+  # Being at or before the Relay's SigningPolicyInitialized log is necessary
+  # but not sufficient: building the policy also recovers each voter's public
+  # key from the v,r,s in their VoterRegistered event on VoterRegistry, which
+  # is emitted earlier. Start between the two and tee-proxy panics on loop with
+  # "recovering pub key for 0x...: invalid number of logs". VotePowerBlockSelected
+  # is the bound because registerVoter requires a non-zero votePowerBlock, set
+  # there, so no VoterRegistered for the epoch can precede it.
+  #
+  # 53650000 matches flarenetwork/infra's own coston config for this same relay
+  # address (see commit 624b09537). Paired with history_drop_seconds = 0 below,
+  # which makes the indexer actually use this instead of its own
+  # history-drop-computed, more-recent start. Re-pick if this env is redeployed
+  # from scratch much later and this value has aged out of whatever history the
+  # RPC retains - and note that moving it backwards needs the indexer database
+  # dropped (scripts/redeploy-indexer.sh --drop-db), since the indexer otherwise
+  # resumes from its last state row.
   indexer_start_index = 53650000
 }
 
@@ -91,6 +102,7 @@ module "tee_indexer" {
   zone                  = var.zone
   network               = google_compute_network.tee.self_link
   service_account_email = var.service_account_email
+  drop_table_at_start   = var.indexer_drop_table_at_start
   chain_rpc_endpoint    = local.chain_rpc_endpoint
   flare_systems_manager = local.flare_systems_manager
   relay                 = local.relay

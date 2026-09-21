@@ -70,7 +70,7 @@ variable "voter_registry" {
 }
 
 variable "start_index" {
-  description = "Block height the indexer starts collecting from. Default is a Coston2 value that predates this module - verify it's still reasonably close to current chain height before relying on it, or override with a recent block for the network you're deploying against. Only takes effect on a fresh DB if history_drop_seconds is 0 - otherwise the indexer computes its own (more recent) start from history_drop_seconds and ignores this entirely."
+  description = "Block height the indexer starts collecting from. Must be at or before the VotePowerBlockSelected block of the epoch tee-proxy's initial_signing_policy_offset selects - two reward epochs back from the newest signing policy. At or before the Relay's SigningPolicyInitialized log is necessary but not sufficient: policy construction also recovers voter public keys from VoterRegistered events on VoterRegistry, which are emitted earlier, and starting between the two panics tee-proxy on loop with 'invalid number of logs'. Default is a Coston2 value that predates this module - verify it's still reasonably close to current chain height before relying on it. Only takes effect on a fresh DB if history_drop_seconds is 0 - otherwise the indexer computes its own (more recent) start from history_drop_seconds and ignores this entirely. Moving it backwards needs drop_table_at_start."
   type        = number
   default     = 46000000
 }
@@ -79,4 +79,10 @@ variable "history_drop_seconds" {
   description = "Seconds of history the indexer guarantees to (re)collect from chain instead of trusting start_index, expressed via the config's history_drop field. Left unset (null) by default, which keeps the binary's own per-chain floor (2 days on Coston/Coston2, 14 days on Songbird/Flare) - on a fresh DB this always wins over start_index if it computes a more recent block. Set to 0 to disable that floor and make start_index authoritative instead, e.g. for a fresh sandbox deploy where you want to start right near current chain tip rather than walk a multi-day backlog."
   type        = number
   default     = null
+}
+
+variable "drop_table_at_start" {
+  description = "Drop and recreate the indexer's tables when the container starts. Needed to move start_index backwards - the indexer otherwise resumes from its last state row and never re-reads earlier blocks. Leave false: set true for exactly one replace of the instance, then set it back, or every subsequent restart wipes the database. scripts/redeploy-indexer.sh --drop-db does that two-step for you."
+  type        = bool
+  default     = false
 }

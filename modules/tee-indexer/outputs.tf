@@ -14,3 +14,8 @@ output "database_config" {
   }
   sensitive = true
 }
+
+output "instance_name" {
+  description = "Instance name of tee-indexer, for `gcloud compute ssh --tunnel-through-iap` and for the -replace address scripts/redeploy-indexer.sh uses"
+  value       = google_compute_instance.tee_indexer.name
+}

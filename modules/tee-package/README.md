@@ -18,17 +18,47 @@ No Kubernetes cluster required - both are plain GCE VMs.
   access to Secret Manager, Cloud SQL, GCS, and Memorystore in the project.
 - A `tee_indexer_database` value - normally `module.tee_indexer.database_config`
   from the sibling `tee-indexer` module.
-- A tee-proxy signing private key you generate/manage yourself (see
-  `variable "tee_proxy_private_key"` and `/OPEN_QUESTIONS.md` at the repo
-  root for why this module doesn't generate one for you).
+- A tee-proxy signing private key you generate/manage yourself with
+  `/scripts/generate-key.sh`. Its address is also this package's
+  `initial_owner` - one keypair, two variables.
 
 ## Notable defaults
 
 `chain_id`, `flare_systems_manager`, `relay`, and `voter_registry` default
 to Coston2's current values. If you're deploying against a different Flare
-network (or the same network after a contract redeploy), override them -
-see `/OPEN_QUESTIONS.md` for the caveat on how current these defaults are.
+network (or the same network after a contract redeploy), override them.
+Check they are still current before relying on them; contract redeploys
+happen and these values are a snapshot.
 
-`tee_machine_debug_mode` (default `false`) adds a public IP + SSH/node-exporter
-access to tee-machine and SSH access to tee-proxy - useful when standing
-this up for the first time, turn it off once you've confirmed it works.
+`tee_machine_debug_mode` (default `false`) switches tee-machine to the
+`confidential-space-debug` image and opens SSH/node-exporter to it over IAP,
+plus container log redirection - useful when standing this up for the first
+time, turn it off once you've confirmed it works. (It does *not* add a public
+IP: tee-machine has none in either mode, by design.)
+
+`allow_tee_proxy_ssh` (default `true`) is deliberately separate from it.
+tee-proxy is a plain COS VM with no attestation posture to protect, the rule
+is IAP-only and still needs `roles/iap.tunnelResourceAccessor`, and without it
+there is no way to restart a wedged proxy short of replacing the instance.
+
+## Governance
+
+Registering a machine needs at least `governance_signers` and
+`governance_threshold`; without them tee-node has nothing to check a signed
+`SET_MACHINE_PATH_LIST` against and rejects every list update. They reach
+tee-node as `tee-env-GOVERNANCE_*` metadata, which its launch policy already
+permits.
+
+Setting any of them also requires `machine_path_manager` — tee-proxy rejects a
+`[governance]` block whose `addresses.machine_path_manager` is the zero
+address, since the block exists only for the machine-path service.
+
+`governance_safe` + `governance_tee_manager` are for Safe-backed governance,
+where a Safe's `approveMachinePathList` transaction authorizes a list instead
+of direct signatures. Set both or neither. For direct-signature governance
+leave them empty: tee-proxy recovers the on-chain signatures itself, and
+`signers`/`threshold` alone just enable a startup cross-check of the
+governance hash against the node's attested one.
+
+All the pairing and bounds rules are enforced as variable validations, so a
+bad combination fails at `terraform plan` rather than at container start.

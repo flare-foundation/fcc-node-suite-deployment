@@ -112,6 +112,12 @@ module "tee_indexer" {
   start_index           = local.indexer_start_index
   history_drop_seconds  = 0
 
+  # Governance is configured on the package below, so the indexer must also
+  # collect the MachinePathManager events tee-proxy's machine-path-list service
+  # reads out of this database - otherwise the service starts, finds nothing and
+  # rejects every list update without logging a cause.
+  machine_path_manager = local.machine_path_manager
+
   depends_on = [google_service_networking_connection.private_service_access]
 }
 

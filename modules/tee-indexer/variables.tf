@@ -86,3 +86,9 @@ variable "drop_table_at_start" {
   type        = bool
   default     = false
 }
+
+variable "machine_path_manager" {
+  description = "MachinePathManager (FlareTeeManager) contract address. Set it to the same value passed to the tee-package module whenever governance is configured there: tee-proxy's machine-path-list service reads MachinePathsAdded, MachinePathListSigned and signMachinePathList transactions out of THIS database, so without these collectors the service starts, finds nothing, and every list update is rejected with no error anywhere. Empty collects nothing, which is correct when the machine-path service is disabled."
+  type        = string
+  default     = ""
+}

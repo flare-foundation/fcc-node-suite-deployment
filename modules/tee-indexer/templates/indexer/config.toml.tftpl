@@ -52,3 +52,21 @@ topic = "0x824bc2cc10bfe21ead60b8c8a90716eb325b9335aa73eaede799abf38fce062c"
 [[indexer.collect_logs]]
 contract_address = "${voter_registry}"
 topic = "0xbfb6cd90b6e2668916d9e034926c84f40bcf94094b0d625ec8eecfdeb2150ae1"
+%{ if machine_path_manager != "" }
+
+# MachinePathManager, read by tee-proxy's machine-path-list service. Topics and
+# selector derived from go-flare-common's machinepathmanager ABI; they match the
+# ones flarenetwork/infra collects for the same contract.
+[[indexer.collect_transactions]]
+contract_address = "${machine_path_manager}"
+func_sig = "cce3332d"
+status = true
+
+[[indexer.collect_logs]]
+contract_address = "${machine_path_manager}"
+topic = "0xb431778feef3dfa1ab02d748f50bfbac8ad13947791c2d21cd52e808f52562d0"
+
+[[indexer.collect_logs]]
+contract_address = "${machine_path_manager}"
+topic = "0x81f37ab661bc938e2691a96974841d81d7d97d19a5f2af658db75332f2439d2c"
+%{ endif }

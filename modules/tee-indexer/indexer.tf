@@ -27,6 +27,7 @@ locals {
     start_index           = var.start_index
     history_drop_seconds  = var.history_drop_seconds
     drop_table_at_start   = var.drop_table_at_start
+    machine_path_manager  = var.machine_path_manager
   })
 
   # systemd unit that runs the indexer container, replacing the Konlet

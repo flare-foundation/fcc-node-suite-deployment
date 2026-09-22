@@ -77,6 +77,10 @@ locals {
     Restart=always
     RestartSec=5
     EnvironmentFile=/etc/tee-proxy/tee-proxy.env
+    # COS mounts / read-only, so docker-credential-gcr cannot write root's
+    # default ~/.docker. Point both it and docker at a writable directory.
+    Environment=DOCKER_CONFIG=/var/lib/tee-proxy-docker
+    ExecStartPre=/bin/mkdir -p /var/lib/tee-proxy-docker
     ExecStartPre=-/usr/bin/docker rm -f tee-proxy
     ${local.registry_auth_line}ExecStartPre=/usr/bin/docker pull ${var.tee_proxy_docker_image}
     ExecStart=/usr/bin/docker run --rm --name tee-proxy \

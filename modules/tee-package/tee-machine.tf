@@ -77,7 +77,12 @@ resource "google_compute_instance" "tee_machine" {
     var.governance_safe == "" ? {} : {
       "tee-env-GOVERNANCE_SAFE"        = var.governance_safe
       "tee-env-GOVERNANCE_TEE_MANAGER" = var.governance_tee_manager
-  })
+    },
+    # Extension-specific settings, e.g. SHIELDED_VAULT / KYC_WHITELIST for the
+    # shielded-transfers extension. The workload image's launch policy has to
+    # allow each one by name or Confidential Space drops it silently.
+    { for k, v in var.extension_env : "tee-env-${k}" => v }
+  )
   # Metadata documentation: https://cloud.google.com/confidential-computing/confidential-space/docs/reference/metadata-variables
 }
 

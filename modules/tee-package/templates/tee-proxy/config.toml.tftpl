@@ -35,6 +35,17 @@ bucket = "${gcs_bucket}"
 prefix = "${gcs_prefix}"
 url = ""
 credentials_file = ""
+%{ if direct_api_key != "" }
+
+[direct]
+# POST /direct, used by extensions that take actions off-chain rather than as
+# on-chain instructions - the USDX oracle uses it for SET_SECRET and
+# GET_READINESS. The key itself is passed as the DIRECT_API_KEY env var rather
+# than written here, same as the signing key.
+enable = true
+api_key_variable = "DIRECT_API_KEY"
+api_key_optional = false
+%{ endif }
 %{ if length(governance_signers) > 0 }
 # Keep this last - it is a TOML table, so any key written below it would be
 # parsed as part of it. Emitted only when governance is configured: an unset

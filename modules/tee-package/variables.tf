@@ -211,3 +211,34 @@ variable "allow_tee_proxy_ssh" {
   type        = bool
   default     = true
 }
+
+# Extension support. A "package" with no extension runs the stock tee-node; an
+# extension is a different workload image, identified on chain by extension_id,
+# usually needing its own settings and often its own tee-proxy build. See
+# envs/coston2-shielded-transfers for a worked example.
+
+variable "direct_api_key" {
+  description = "Enables tee-proxy's POST /direct endpoint, which extensions use for actions taken off-chain rather than as on-chain instructions (the USDX oracle uses it for SET_SECRET and GET_READINESS). Reaches the container as the DIRECT_API_KEY env var, not written into the config. Empty leaves the [direct] block out entirely."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "extension_env" {
+  description = "Extra tee-env-* metadata for the workload, as KEY => value - e.g. { SHIELDED_VAULT = \"0x...\", KYC_WHITELIST = \"0x...\" }. Each entry becomes the metadata key tee-env-KEY. Every key must also appear in the workload image's tee.launch_policy.allow_env_override label, or Confidential Space silently ignores it. Deliberately a free-form map: extensions differ, and a fixed variable per setting would need a module change for each new one."
+  type        = map(string)
+  default     = {}
+
+  validation {
+    condition     = alltrue([for k in keys(var.extension_env) : can(regex("^[A-Z][A-Z0-9_]*$", k))])
+    error_message = "extension_env keys must be UPPER_SNAKE_CASE, and are used verbatim after the tee-env- prefix."
+  }
+
+  validation {
+    condition = length(setintersection(keys(var.extension_env), [
+      "LOG_LEVEL", "PROXY_URL", "INITIAL_OWNER", "EXTENSION_ID", "CHAIN_ID",
+      "GOVERNANCE_SIGNERS", "GOVERNANCE_THRESHOLD", "GOVERNANCE_SAFE", "GOVERNANCE_TEE_MANAGER",
+    ])) == 0
+    error_message = "extension_env must not set a key this module already manages - use the dedicated variable instead (chain_id, initial_owner, extension_id, governance_*)."
+  }
+}

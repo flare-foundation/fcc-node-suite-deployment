@@ -5,6 +5,17 @@ locals {
   internal_port = 6661
   external_port = 6662
 
+  # Artifact Registry needs a credential helper before `docker pull`; public
+  # registries (ghcr.io, Docker Hub) do not. Konlet configured this for us, so
+  # the systemd unit has to do it now - extension images generally live in
+  # Artifact Registry even when the stock ones do not. Empty for public images,
+  # which keeps the ExecStartPre out of the unit entirely.
+  proxy_image_registry = endswith(split("/", var.tee_proxy_docker_image)[0], "-docker.pkg.dev") ? split("/", var.tee_proxy_docker_image)[0] : ""
+  # Rendered as one interpolation rather than a %{ if } inside the unit heredoc:
+  # template directives there disturb the <<- dedent and, worse, silently ate the
+  # line-continuation backslash off the ExecStart line above them.
+  registry_auth_line = local.proxy_image_registry == "" ? "" : "ExecStartPre=/usr/bin/docker-credential-gcr configure-docker --registries=${local.proxy_image_registry}\n"
+
   config_toml = templatefile("${path.module}/templates/tee-proxy/config.toml.tftpl", {
     redis_host                = google_redis_instance.tee_proxy_redis.host
     redis_port                = google_redis_instance.tee_proxy_redis.port
@@ -28,6 +39,7 @@ locals {
     governance_threshold   = var.governance_threshold
     governance_safe        = var.governance_safe
     governance_tee_manager = var.governance_tee_manager
+    direct_api_key         = var.direct_api_key
   })
 
   # PRIVATE_KEY reaches the container through a 0600 EnvironmentFile rather
@@ -35,6 +47,9 @@ locals {
   # or in the process table.
   tee_proxy_env = <<-EOT
     PRIVATE_KEY=${var.tee_proxy_private_key}
+    %{if var.direct_api_key != ""~}
+    DIRECT_API_KEY=${var.direct_api_key}
+    %{endif~}
   EOT
 
   # systemd unit that runs the tee-proxy container. This replaces the Konlet
@@ -49,10 +64,8 @@ locals {
   # did: COS runs its iptables INPUT chain with policy DROP, so a host-networked
   # listener is reachable on localhost but not from tee-machine or the internet.
   #
-  # The images this module is pointed at are public (ghcr.io), so `docker pull`
-  # needs no credentials. A private Artifact Registry image would need an
-  # `ExecStartPre=/usr/bin/docker-credential-gcr configure-docker --registries=...`
-  # ahead of the pull - Konlet handled registry auth for us.
+  # Artifact Registry images get a docker-credential-gcr ExecStartPre ahead of
+  # the pull; public ones (ghcr.io) do not need it. See local.proxy_image_registry.
   tee_proxy_service = <<-EOT
     [Unit]
     Description=tee-proxy
@@ -65,9 +78,10 @@ locals {
     RestartSec=5
     EnvironmentFile=/etc/tee-proxy/tee-proxy.env
     ExecStartPre=-/usr/bin/docker rm -f tee-proxy
-    ExecStartPre=/usr/bin/docker pull ${var.tee_proxy_docker_image}
+    ${local.registry_auth_line}ExecStartPre=/usr/bin/docker pull ${var.tee_proxy_docker_image}
     ExecStart=/usr/bin/docker run --rm --name tee-proxy \
       --env PRIVATE_KEY \
+      --env DIRECT_API_KEY \
       --publish ${local.internal_port}:${local.internal_port} \
       --publish ${local.external_port}:${local.external_port} \
       --volume /etc/tee-proxy/config.toml:/app/config/config.toml:ro \

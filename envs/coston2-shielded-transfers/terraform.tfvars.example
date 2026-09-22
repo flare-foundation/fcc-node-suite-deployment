@@ -1,0 +1,10 @@
+# Copy to terraform.tfvars. The extension's images, id and contract addresses
+# all default to Coston2's real values, so only the keypair needs supplying.
+
+# Two halves of one keypair, from ../../scripts/generate-key.sh
+tee_proxy_private_key = "0x..."
+initial_owner         = "0x..."
+
+# Optional. Defaults to infra's throwaway "12345" - set a real value if this
+# deployment's /direct endpoint should not be callable by anyone who finds it.
+# direct_api_key = "..."

@@ -22,10 +22,9 @@ terraform output tee_proxy_info_url
 `flarenetwork/infra`'s `terraform/gcp/services/tee/sandbox/hackaton/service_account_permissions.tf`,
 that SA needs (at least): `roles/artifactregistry.reader`,
 `roles/confidentialcomputing.workloadUser`, `roles/compute.instanceAdmin.v1`,
-`roles/iam.serviceAccountUser` (self) — plus whatever this module itself
-needs beyond that (`roles/secretmanager.admin`, `roles/cloudsql.admin`,
-`roles/storage.admin`, `roles/redis.admin`), which aren't part of that SA's
-existing grants in the reference repo and may need adding.
+`roles/iam.serviceAccountUser` (self). The module needs nothing more on it;
+whoever runs `terraform` needs project Editor plus `roles/iam.serviceAccountUser`
+on the SA.
 
 See `envs/example/` instead if you want a fully generic template for an
 arbitrary project/network.

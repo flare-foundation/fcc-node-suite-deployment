@@ -14,8 +14,12 @@ No Kubernetes cluster required - both are plain GCE VMs.
 ## Prerequisites
 
 - A GCP project and VPC network (self-link) already created.
-- A service account with permission to run Confidential Space VMs, and
-  access to Secret Manager, Cloud SQL, GCS, and Memorystore in the project.
+- A service account for the VMs to run as, with
+  `roles/confidentialcomputing.workloadUser` (plus `roles/artifactregistry.reader`
+  if the images are in Artifact Registry). The module grants it access to the
+  GCS bucket it creates.
+- Project Editor for whoever runs Terraform, plus `roles/iam.serviceAccountUser`
+  on that service account.
 - A `tee_indexer_database` value - normally `module.tee_indexer.database_config`
   from the sibling `tee-indexer` module.
 - A tee-proxy signing private key you generate/manage yourself with

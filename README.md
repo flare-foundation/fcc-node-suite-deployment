@@ -13,7 +13,7 @@ and chain indexer — no Kubernetes cluster required.
 - **tee-indexer** — indexes the chain data tee-proxy needs, into its own
   Cloud SQL database
 - Supporting pieces created for you: a Redis cache, a GCS bucket for
-  tee-proxy's storage, and the secrets/networking that wire it all together
+  tee-proxy's storage, and the networking that wires it all together
 
 ## Before you start
 
@@ -24,11 +24,17 @@ You'll need:
    against that project.
 3. **[Terraform](https://developer.hashicorp.com/terraform/install)**, `>1.11`.
 4. **A service account** in that project for the VMs to run as. It needs
-   (at minimum): `roles/confidentialcomputing.workloadUser`,
-   `roles/compute.instanceAdmin.v1`, `roles/iam.serviceAccountUser`,
-   `roles/secretmanager.admin`, `roles/cloudsql.admin`, `roles/storage.admin`,
-   `roles/redis.admin`.
-5. **A tee-proxy signing key.** Generate a fresh one with:
+   `roles/confidentialcomputing.workloadUser` — without it tee-machine's
+   workload cannot attest and exits. The module grants it access to
+   tee-proxy's GCS bucket itself. If your images live in Artifact Registry
+   rather than a public registry, it also needs `roles/artifactregistry.reader`
+   on that repository.
+5. **Permission to deploy.** Whoever runs `terraform` needs project Editor
+   (`roles/editor`) plus `roles/iam.serviceAccountUser` on the service account
+   above, to attach it to the VMs. That is enough on purpose: the modules
+   avoid resources Editor cannot manage, such as Secret Manager secret
+   versions and secret or instance IAM bindings.
+6. **A tee-proxy signing key.** Generate a fresh one with:
    ```
    ./scripts/generate-key.sh
    ```

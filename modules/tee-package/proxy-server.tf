@@ -128,6 +128,12 @@ locals {
   EOT
 }
 
+# Secret containers only — no versions and no IAM bindings. The Google
+# provider reads secret payloads on refresh (secretmanager.versions.access)
+# and IAM members need secretmanager.secrets.setIamPolicy; project Editor
+# has neither. The live key reaches tee-proxy via cloud-init (tee_proxy_env
+# above), not Secret Manager. user-data is plain-text metadata, so SM cannot
+# hide it from anyone with compute.instances.get anyway.
 resource "google_secret_manager_secret" "config" {
   secret_id = "tee-proxy-config-${var.deploy_suffix}"
   replication {
@@ -135,40 +141,11 @@ resource "google_secret_manager_secret" "config" {
   }
 }
 
-resource "google_secret_manager_secret_version" "config" {
-  secret      = google_secret_manager_secret.config.id
-  secret_data = local.config_toml
-}
-
-resource "google_secret_manager_secret_iam_member" "proxy_config_access" {
-  secret_id = google_secret_manager_secret.config.id
-  role      = "roles/secretmanager.secretAccessor"
-  member    = "serviceAccount:${var.service_account_email}"
-}
-
-# tee-proxy's signing key. Stored here for auditability/rotation even though
-# the VM gets it from instance metadata instead: the cloud-init above carries
-# it into a 0600 EnvironmentFile, but user-data is itself plain-text metadata,
-# so that narrows who can read the file on disk without making the key any less
-# visible to anyone with compute.instances.get. tee-proxy runs on a plain COS
-# VM rather than inside Confidential Space, so there is no attestation-based
-# secret unwrapping available to it either.
 resource "google_secret_manager_secret" "proxy_private_key" {
   secret_id = "tee-proxy-private-key-${var.deploy_suffix}"
   replication {
     auto {}
   }
-}
-
-resource "google_secret_manager_secret_version" "proxy_private_key" {
-  secret      = google_secret_manager_secret.proxy_private_key.id
-  secret_data = var.tee_proxy_private_key
-}
-
-resource "google_secret_manager_secret_iam_member" "proxy_private_key_access" {
-  secret_id = google_secret_manager_secret.proxy_private_key.id
-  role      = "roles/secretmanager.secretAccessor"
-  member    = "serviceAccount:${var.service_account_email}"
 }
 
 # Static IP for tee-proxy VM

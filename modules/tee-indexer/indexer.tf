@@ -138,12 +138,3 @@ resource "google_compute_firewall" "allow_tee_indexer_ssh" {
 
   description = "Allow SSH access to tee-indexer for debugging, via IAP only"
 }
-
-# IAM permissions for the indexer VM
-resource "google_compute_instance_iam_member" "admin_tee_indexer" {
-  project       = var.project
-  zone          = var.zone
-  instance_name = google_compute_instance.tee_indexer.name
-  role          = "roles/compute.instanceAdmin.v1"
-  member        = "serviceAccount:${var.service_account_email}"
-}

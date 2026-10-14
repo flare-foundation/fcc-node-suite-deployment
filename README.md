@@ -41,17 +41,18 @@ You'll need:
    This prints an address and private key to your terminal and writes
    nothing to disk — copy both somewhere safe, you'll need them in a minute.
 
-   The two halves belong to **one keypair**, and both go into your tfvars:
-   the private key as `tee_proxy_private_key`, and the matching address as
-   the package's `initial_owner`. They are not two independent secrets.
-   (`initial_owner` is the address tee-node treats as the machine's owner —
-   the identity allowed to configure it before any governance is in place.)
-
-   The other identity variable, `extension_id`, is **not** something you
-   choose: it is assigned per extension, and identifies which extension this
-   machine runs. Leave it at the module default (all zeros) until you have
-   been given one — `/info` reporting an all-zero `machineData.extensionId`
-   is correct in that case, not a fault.
+   `tee_proxy_private_key` is the key from `generate-key.sh`.
+   `initial_owner` is the address registered as the machine owner. For
+   extension 0 (the stock tee-node image) that is usually the address
+   `generate-key.sh` printed. For your own extension it is a separate
+   identity: the address your registration tooling registers the machine
+   with. `extension_id` is assigned by the chain, and stays all zeros for
+   extension 0.
+   `governance_signers` and `governance_threshold` are not needed to boot
+   the machine, but are needed to register it, extension 0 included. They
+   must match the signer set your registration tooling writes with
+   `set-governance`. With a single signer, that set is usually
+   `initial_owner` alone and the threshold is `1`.
 
 ## Setting it up
 
@@ -63,9 +64,27 @@ cp terraform.tfvars.example terraform.tfvars
 Open `terraform.tfvars` and fill in:
 - `project` — your GCP project ID
 - `service_account_email` — the service account from step 4 above
-- `tee_node_docker_image` — the workload image you want tee-machine to run
-- `tee_proxy_docker_image` — the image you want tee-proxy to run
+- `tee_node_docker_image` — the stock tee-node image for extension 0 (the
+  default), or your own extension image, pinned by digest
+- `tee_proxy_docker_image` — the tee-proxy image
 - `tee_proxy_private_key` — the key you just generated
+- `initial_owner` — the machine owner address
+- `governance_signers` and `governance_threshold` — before you register
+  the machine
+- `extension_id` and `extension_env` — only for your own extension; leave
+  them out for extension 0
+- `chain_id` and `chain_rpc_endpoint` — for the Flare network you target
+- `flare_systems_manager`, `voter_registry`, `relay`, and
+  `machine_path_manager` — protocol contract addresses on that network
+
+`envs/example` is network-agnostic and deploys extension 0 by default.
+Concrete filled-in envs such as `envs/coston-sandbox` and
+`envs/coston2-sandbox` show what real values look like for a given chain,
+and `envs/coston2-shielded-transfers` shows an extension deployment. The
+example runs its own indexer; external
+indexer settings are commented out in `variables.tf`, `main.tf`, and
+`terraform.tfvars.example` so you can switch without rewriting the module
+call.
 
 Then:
 
@@ -114,8 +133,10 @@ modules/
   tee-package/    the tee-machine + tee-proxy module
   tee-indexer/     the chain indexer + its database
 envs/
-  example/         generic template - bring your own project
+  example/         generic template - bring your own project; extension 0 by default
   coston-sandbox/  concrete example targeting Coston
+  coston2-sandbox/ concrete example targeting Coston2
+  coston2-shielded-transfers/  extension deployment on Coston2
 scripts/
   generate-key.sh       generates a throwaway signing keypair
   redeploy-proxy.sh     replaces tee-proxy (and tee-machine with it)

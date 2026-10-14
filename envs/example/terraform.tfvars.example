@@ -1,23 +1,47 @@
-# Copy this file to terraform.tfvars and fill in the values for your own GCP project.
+# Copy this file to terraform.tfvars and fill in the values for your environment.
 
-project = "my-gcp-project"
+project               = "PROJECT_ID"
+service_account_email = "tee-runtime@PROJECT_ID.iam.gserviceaccount.com"
 
-# An existing service account in `project` for the VMs to run as, with:
-#   roles/confidentialcomputing.workloadUser (required for tee-machine to run as a
-#     Confidential Space workload at all)
-# Whoever runs terraform needs project Editor plus roles/iam.serviceAccountUser
-# on this service account.
-# The images below are public (GHCR), so no extra registry access is needed
-# for them. If you use an image from a private registry instead, granting
-# this service account access to it is on you.
-service_account_email = "my-service-account@my-gcp-project.iam.gserviceaccount.com"
+# Optional. Defaults to "example". Change it when running more than one stack
+# in the same GCP project so resource names stay unique.
+# deploy_suffix = "my-stack"
 
-# The tee-machine workload image
-tee_node_docker_image = "ghcr.io/flare-foundation/tee-node:v0.0.24"
-
-# The tee-proxy image
+# Stock tee-node image. This deploys extension 0. Replace it with your own
+# extension image when you are not running the base image.
+tee_node_docker_image  = "ghcr.io/flare-foundation/tee-node:v0.0.26"
 tee_proxy_docker_image = "ghcr.io/flare-foundation/tee-proxy:v0.0.24"
 
-# tee-proxy's signing private key: a secp256k1 private key as a 0x-prefixed
-# hex string. Generate a fresh one with ../../scripts/generate-key.sh.
 tee_proxy_private_key = "0x..."
+initial_owner         = "0x..." # machine owner address
+
+# Governance. Not needed to boot the machine, but needed to register it,
+# extension 0 included. Must match the signer set your registration tooling
+# writes with set-governance.
+# governance_signers   = ["0x..."] # same address as initial_owner when using a single signer
+# governance_threshold = 1
+
+# Extension 0 leaves these at their defaults (zero extension id, no extra env).
+# Uncomment when the workload image is your own extension.
+# Each extension_env key must be on that image's allow_env_override label.
+# extension_id = "0x..." # on-chain extension ID assigned by the chain
+# extension_env = {
+#   CHAIN_URL = "https://..."
+# }
+
+# Target chain. Fill these for the network you are deploying against.
+# Examples: Coston2 chain_id 114, Coston 16, Songbird 19, Flare 14.
+chain_id           = 0
+chain_rpc_endpoint = "https://..."
+
+# Protocol contract addresses for that chain. Do not pin them in main.tf.
+flare_systems_manager = "0x..." # FlareSystemsManager
+voter_registry        = "0x..." # VoterRegistry
+relay                 = "0x..." # Relay
+machine_path_manager  = "0x..." # FlareTeeManager
+
+# This environment runs its own indexer (module.tee_indexer).
+# Uncomment to use an external indexer instead. Host, port, and database name
+# have defaults on the commented variables in variables.tf.
+# indexer_db_user     = "..."
+# indexer_db_password = "..."

@@ -10,6 +10,7 @@
 #
 # Memorystore has no public endpoint, so this goes through tee-proxy over IAP.
 
+# shellcheck source=scripts/_common.sh
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
 usage() {
@@ -44,7 +45,7 @@ port=$(tf_output redis_port)
 # One SSH round trip per redis-cli call; the image is cached after the first.
 redis() {
     gcloud compute ssh "$proxy" --tunnel-through-iap --quiet \
-        --command "docker run --rm redis:7 redis-cli -h $host -p $port $*"
+        --command "docker run --rm redis:7.4@sha256:b6b6e3dc0c0952737748e55d5d885272840c7e42ba41ab1d5489f693419882f5 redis-cli -h $host -p $port $*"
 }
 
 echo "tee-proxy: $proxy"

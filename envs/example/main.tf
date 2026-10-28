@@ -49,7 +49,7 @@ resource "google_service_networking_connection" "private_service_access" {
 }
 
 # tee-machine has no public IP even in debug mode (see modules/tee-package's
-# tee-machine.tf), and tee-indexer has none outside cli mode - both still
+# tee_machine.tf), and tee-indexer has none outside cli mode - both still
 # need outbound internet access (pulling container images, calling the
 # attestation service, hitting the chain RPC), so route their egress through
 # Cloud NAT instead.

@@ -54,7 +54,11 @@ resource "google_compute_instance" "tee_machine" {
   # the same as an absent one. tee-node's Dockerfile already lists all four in
   # tee.launch_policy.allow_env_override, so no launch-policy change is needed.
   metadata = merge({
-    startup-script = var.tee_machine_debug_mode ? templatefile("${path.module}/templates/tee-machine-debug-init.sh", {}) : ""
+    # Only the debug image runs sshd at all. There, accept only keys on the
+    # instance itself, not project-wide ones.
+    block-project-ssh-keys = true
+
+    startup-script = var.tee_machine_debug_mode ? templatefile("${path.module}/templates/tee_machine_debug_init.sh", {}) : ""
 
     "tee-image-reference" = var.tee_node_docker_image
     # https://cloud.google.com/confidential-computing/confidential-space/docs/reference/launch-policies#allow-env-override:~:text=tee.launch_policy.log_redirect
@@ -84,6 +88,11 @@ resource "google_compute_instance" "tee_machine" {
     { for k, v in var.extension_env : "tee-env-${k}" => v }
   )
   # Metadata documentation: https://cloud.google.com/confidential-computing/confidential-space/docs/reference/metadata-variables
+
+  # `gcloud compute ssh` adds its key to the instance - see tee_proxy.
+  lifecycle {
+    ignore_changes = [metadata["ssh-keys"]]
+  }
 }
 
 resource "google_compute_firewall" "allow_tee_machine_ports" {

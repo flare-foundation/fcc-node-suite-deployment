@@ -23,23 +23,45 @@ You'll need:
 2. **The `gcloud` CLI**, authenticated (`gcloud auth application-default login`)
    against that project.
 3. **[Terraform](https://developer.hashicorp.com/terraform/install)**, `>1.11`.
-4. **A service account** in that project for the VMs to run as. It needs
-   `roles/confidentialcomputing.workloadUser` — without it tee-machine's
-   workload cannot attest and exits. The module grants it access to
-   tee-proxy's GCS bucket itself. If your images live in Artifact Registry
-   rather than a public registry, it also needs `roles/artifactregistry.reader`
-   on that repository.
+   The envs keep state in a local `terraform.tfstate`, and that state holds
+   the tee-proxy key and the database passwords in plain text. For anything
+   beyond a throwaway test, add a `gcs` backend to the env's `terraform.tf`,
+   pointing at a bucket with versioning on and access limited to whoever
+   deploys. Terraform does not create that bucket for you: the state has to
+   exist before the first `apply`.
+4. **A service account** in that project for the VMs to run as. It needs:
+   - `roles/confidentialcomputing.workloadUser` — without it tee-machine's
+     workload cannot attest and exits.
+   - `roles/logging.logWriter` and `roles/monitoring.metricWriter` — for
+     tee-machine's log redirection and memory monitoring in debug mode, and
+     for the COS VMs' own logs and metrics.
+   - `roles/artifactregistry.reader` on the repository, if your images live
+     in Artifact Registry rather than a public registry.
+
+   The module grants it access to tee-proxy's GCS bucket itself.
 5. **Permission to deploy.** Whoever runs `terraform` needs project Editor
    (`roles/editor`) plus `roles/iam.serviceAccountUser` on the service account
    above, to attach it to the VMs. That is enough on purpose: the modules
    avoid resources Editor cannot manage, such as Secret Manager secret
-   versions and secret or instance IAM bindings.
+   versions and project or instance IAM bindings - which is also why the
+   service account above is an input rather than created here. To SSH in
+   (the redeploy and flush scripts do), you also need
+   `roles/iap.tunnelResourceAccessor`.
 6. **A tee-proxy signing key.** Generate a fresh one with:
    ```
    ./scripts/generate-key.sh
    ```
    This prints an address and private key to your terminal and writes
    nothing to disk — copy both somewhere safe, you'll need them in a minute.
+
+   For anything that holds value:
+   - Generate it on a machine you trust, ideally one that is not shared and
+     has no remote access. Clear the terminal afterwards.
+   - Store the private key in a password manager or secret store straight
+     away, not in a file, a chat or a ticket.
+   - `terraform.tfvars` holds it in plain text. It is gitignored, but delete
+     it once the state is in a remote backend and pass the key with
+     `TF_VAR_tee_proxy_private_key` instead.
 
    `tee_proxy_private_key` is the key from `generate-key.sh`.
    `initial_owner` is the address registered as the machine owner. For

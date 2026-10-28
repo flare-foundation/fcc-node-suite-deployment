@@ -1,6 +1,6 @@
 locals {
   # tee-proxy's two listening ports, stated once. The rendered config, the
-  # systemd unit and the firewall rules below all read them, and tee-machine.tf
+  # systemd unit and the firewall rules below all read them, and tee_machine.tf
   # builds its PROXY_URL from local.internal_port.
   internal_port = 6661
   external_port = 6662
@@ -84,6 +84,10 @@ locals {
     ExecStartPre=-/usr/bin/docker rm -f tee-proxy
     ${local.registry_auth_line}ExecStartPre=/usr/bin/docker pull ${var.tee_proxy_docker_image}
     ExecStart=/usr/bin/docker run --rm --name tee-proxy \
+      --cap-drop ALL \
+      --security-opt no-new-privileges \
+      --log-opt max-size=10m \
+      --log-opt max-file=5 \
       --env PRIVATE_KEY \
       --env DIRECT_API_KEY \
       --publish ${local.internal_port}:${local.internal_port} \
@@ -128,26 +132,6 @@ locals {
   EOT
 }
 
-# Secret containers only — no versions and no IAM bindings. The Google
-# provider reads secret payloads on refresh (secretmanager.versions.access)
-# and IAM members need secretmanager.secrets.setIamPolicy; project Editor
-# has neither. The live key reaches tee-proxy via cloud-init (tee_proxy_env
-# above), not Secret Manager. user-data is plain-text metadata, so SM cannot
-# hide it from anyone with compute.instances.get anyway.
-resource "google_secret_manager_secret" "config" {
-  secret_id = "tee-proxy-config-${var.deploy_suffix}"
-  replication {
-    auto {}
-  }
-}
-
-resource "google_secret_manager_secret" "proxy_private_key" {
-  secret_id = "tee-proxy-private-key-${var.deploy_suffix}"
-  replication {
-    auto {}
-  }
-}
-
 # Static IP for tee-proxy VM
 resource "google_compute_address" "tee_proxy_ip" {
   name   = join("-", compact(["tee-proxy-ip", var.deploy_suffix]))
@@ -158,7 +142,7 @@ resource "google_compute_address" "tee_proxy_ip" {
 resource "google_compute_instance" "tee_proxy" {
   name         = join("-", compact(["tee-proxy", var.deploy_suffix]))
   zone         = var.zone
-  machine_type = "e2-medium"
+  machine_type = var.tee_proxy_machine_type
 
   allow_stopping_for_update = true
 
@@ -180,10 +164,25 @@ resource "google_compute_instance" "tee_proxy" {
     }
   }
 
+  shielded_instance_config {
+    enable_secure_boot          = true
+    enable_vtpm                 = true
+    enable_integrity_monitoring = true
+  }
+
   tags = ["tee-proxy"]
 
   metadata = {
     user-data = local.cloud_config
+    # Only keys on the instance itself are accepted, so a project-wide key
+    # cannot reach tee-proxy.
+    block-project-ssh-keys = true
+  }
+
+  # `gcloud compute ssh` adds its key to the instance once project keys are
+  # blocked. Ignore it, or every apply would remove it again.
+  lifecycle {
+    ignore_changes = [metadata["ssh-keys"]]
   }
 }
 
@@ -236,7 +235,7 @@ resource "google_compute_firewall" "allow_tee_proxy_ssh" {
   direction = "INGRESS"
   priority  = 1000
   # Google's IAP TCP-forwarding range, not 0.0.0.0/0 - see allow_tee_machine_ports
-  # in tee-machine.tf for why.
+  # in tee_machine.tf for why.
   source_ranges = ["35.235.240.0/20"]
   target_tags   = ["tee-proxy"]
 

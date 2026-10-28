@@ -7,6 +7,27 @@ locals {
   relay                 = "0xEcD0B60Ea5E01e4D0bFd621c8920B40A32389b83"
   voter_registry        = "0x42F4526BFC6f892DB515a832a52eFc9edFADf6c0"
 
+  # Coston's machine-path governance, the same set flarenetwork/infra's
+  # staging/coston packages use. Without it the machine boots but cannot be
+  # registered. governance_tee_manager is the FlareTeeManager the Safe
+  # targets, which on Coston is machine_path_manager itself.
+  machine_path_manager = "0xc4885998f5D792ed88C5Af7a3AaCBe333f017658"
+  governance_signers = [
+    "0x3E3CFF07D5b62C0B0aF4A14F5B54F60e232211Dc",
+    "0x94D8eeA00fC2fee86e88C7cB828f245fcd2d1078",
+    "0x63cd3c99b9fEcB3e49269f3BaDB0E1c144D6d1eE",
+    "0x1c2F1A0fF05310A7BF65BCc2d7525BBEFB61fA39",
+    "0x630dC7852735B31D471B64b1ea83e86A9eA0Fa14",
+    "0xFB7af96a68eaEE4C88F677B91e31cDcc397dbf28",
+    "0x42b0A1e3611387CeD6C2C61F427DF55719C93a93",
+    "0xA40690D34bF2Efd3C0718Eeb8998Bd2Eb237dCC1",
+    "0x817b1Ed5E89e932d128B9858d5EFA17F27ba64bc",
+    "0xB0cB178bce33408fbc724318d88D096aD634227c",
+    "0xD1de66afbF51Da5526641aFb137A15719c63De2E",
+  ]
+  governance_threshold = 3
+  governance_safe      = "0x25365AA95F57768d598cA6C938f93F7a8D2469E8"
+
   # Must be at or before the VotePowerBlockSelected block of the epoch
   # initial_signing_policy_offset selects - two reward epochs back from the
   # newest signing policy.
@@ -88,7 +109,7 @@ resource "google_service_networking_connection" "private_service_access" {
   depends_on = [google_project_service.service_networking]
 }
 
-# tee-machine has no public IP even in debug mode (see tee-machine.tf), and
+# tee-machine has no public IP even in debug mode (see tee_machine.tf), and
 # tee-indexer has none outside cli mode - both still need outbound internet
 # access (pulling container images, calling the attestation service, hitting
 # the chain RPC), so route their egress through Cloud NAT instead.
@@ -124,6 +145,7 @@ module "tee_indexer" {
   voter_registry        = local.voter_registry
   start_index           = local.indexer_start_index
   history_drop_seconds  = 0
+  machine_path_manager  = local.machine_path_manager
 
   depends_on = [google_service_networking_connection.private_service_access]
 }
@@ -146,4 +168,13 @@ module "tee_package" {
   relay                  = local.relay
   voter_registry         = local.voter_registry
   tee_machine_debug_mode = true
+  tee_machine_type       = "n2d-standard-2"
+  machine_path_manager   = local.machine_path_manager
+  governance_signers     = local.governance_signers
+  governance_threshold   = local.governance_threshold
+  governance_safe        = local.governance_safe
+  governance_tee_manager = local.machine_path_manager
+  # The Flare-held address this sandbox has always run under. The module no
+  # longer defaults to it.
+  initial_owner = "0xEfFDC9d60eaa243b2fCC5c2A21FA938B3A872d07"
 }

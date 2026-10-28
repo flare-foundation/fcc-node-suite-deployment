@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Shared helpers for the operator scripts. Source, don't execute.
 #
 # Why these scripts exist at all: cloud-init runs only on first boot and

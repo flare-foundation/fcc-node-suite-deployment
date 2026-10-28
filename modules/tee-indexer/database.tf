@@ -14,14 +14,16 @@ resource "random_password" "db_reader" {
 # Cloud SQL MySQL instance for indexer
 resource "google_sql_database_instance" "indexer_db" {
   name             = join("-", compact(["tee-indexer-db", var.cli ? "cli" : "", var.deploy_suffix]))
-  database_version = "MYSQL_8_0"
+  database_version = var.database_version
   region           = var.region
   project          = var.project
 
   settings {
+    edition           = "ENTERPRISE"
     tier              = var.sql_tier
     availability_type = local.is_production ? "REGIONAL" : "ZONAL"
     disk_size         = 10
+    disk_autoresize   = true
     disk_type         = "PD_SSD"
 
     backup_configuration {
@@ -35,16 +37,16 @@ resource "google_sql_database_instance" "indexer_db" {
       private_network = var.network
 
       dynamic "authorized_networks" {
-        for_each = var.cli ? [1] : []
+        for_each = var.cli ? var.cli_authorized_networks : {}
         content {
-          name  = "abelium"
-          value = "188.230.128.78"
+          name  = authorized_networks.key
+          value = authorized_networks.value
         }
       }
     }
 
     location_preference {
-      zone = "${var.region}-b"
+      zone = var.zone
     }
   }
 
@@ -66,7 +68,9 @@ resource "google_sql_user" "indexer_admin" {
   project  = var.project
 }
 
-# Read-only user
+# Second user for tee-proxy's connection. Cloud SQL gives every user created
+# through the API the cloudsqlsuperuser role, so this one can write too - it
+# is separate from the indexer's own user, not read-only.
 resource "google_sql_user" "indexer_reader" {
   name     = "indexer-reader"
   instance = google_sql_database_instance.indexer_db.name

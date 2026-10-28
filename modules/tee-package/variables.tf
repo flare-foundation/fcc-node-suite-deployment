@@ -1,6 +1,11 @@
 variable "deploy_suffix" {
-  description = "Deployment suffix, used to prefix resource names in case of testing multiple deploys at the same time"
-  default     = ""
+  description = "Deployment suffix, appended to resource names so several deploys can share a project. Required: the firewall and bucket names need it to stay unique and valid."
+  type        = string
+
+  validation {
+    condition     = can(regex("^[a-z0-9]([a-z0-9-]*[a-z0-9])?$", var.deploy_suffix))
+    error_message = "deploy_suffix must be non-empty lowercase letters, digits and dashes, not starting or ending with a dash."
+  }
 }
 
 variable "project" {
@@ -10,11 +15,13 @@ variable "project" {
 
 variable "region" {
   description = "Deployment region"
+  type        = string
   default     = "europe-west1"
 }
 
 variable "zone" {
   description = "Deployment zone"
+  type        = string
   default     = "europe-west1-b"
 }
 
@@ -49,22 +56,35 @@ variable "tee_proxy_private_key" {
 }
 
 variable "initial_owner" {
-  description = "Initial owner address for TEE node."
-  default     = "0xEfFDC9d60eaa243b2fCC5c2A21FA938B3A872d07"
+  description = "Initial owner address for TEE node. No default: each operator registers the machine under their own address."
+  type        = string
+
+  validation {
+    condition     = can(regex("^0x[0-9a-fA-F]{40}$", var.initial_owner))
+    error_message = "initial_owner must be a 0x-prefixed 20-byte hex address."
+  }
 }
 
 variable "extension_id" {
   description = "Extension ID to be used by the TEE machine."
+  type        = string
   default     = "0x0000000000000000000000000000000000000000000000000000000000000000"
 }
 
 variable "tee_machine_type" {
   description = "Machine type for tee-machine."
+  type        = string
   default     = "c3d-standard-4"
 }
 
+variable "tee_proxy_machine_type" {
+  description = "Machine type for tee-proxy."
+  type        = string
+  default     = "e2-medium"
+}
+
 variable "tee_machine_debug_mode" {
-  description = "Debug mode for tee machine: enables a public IP + SSH/node-exporter access on tee-machine, container log redirection, and SSH access to tee-proxy."
+  description = "Debug mode for tee-machine: boots the confidential-space-debug image instead of confidential-space, opens SSH and node-exporter to it over IAP, and turns on container log redirection and memory monitoring. Adds no public IP - tee-machine has none in either mode. SSH to tee-proxy is allow_tee_proxy_ssh, not this."
   type        = bool
   default     = false
 }

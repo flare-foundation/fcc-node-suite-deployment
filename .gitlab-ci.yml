@@ -1,0 +1,23 @@
+stages:
+  - test
+
+default:
+  tags:
+    - flarenetwork
+
+workflow:
+  rules:
+    - if: '$CI_OPEN_MERGE_REQUESTS != null && $CI_PIPELINE_SOURCE == "push"'
+      when: never
+    - when: always
+
+include:
+  - template: Jobs/SAST-IaC.latest.gitlab-ci.yml
+  - template: Jobs/Secret-Detection.latest.gitlab-ci.yml
+  # terraform fmt, tflint (.tflint.hcl) and checkov. checkov stays non-blocking
+  # until its remaining findings - Redis/SQL TLS, CMEK - are either fixed or
+  # skipped with a reason.
+  - component: gitlab.com/flarenetwork/ci-components-private/lint-terraform@2
+    inputs:
+      checkov_allow_failure: true
+  - component: gitlab.com/flarenetwork/ci-components-private/lint-shell@2

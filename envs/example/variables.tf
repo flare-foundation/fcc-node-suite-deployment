@@ -5,11 +5,13 @@ variable "project" {
 
 variable "region" {
   description = "GCP region for regional resources"
+  type        = string
   default     = "europe-west1"
 }
 
 variable "zone" {
   description = "GCP zone for zonal resources"
+  type        = string
   default     = "europe-west1-b"
 }
 

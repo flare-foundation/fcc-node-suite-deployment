@@ -1,5 +1,6 @@
 variable "deploy_suffix" {
   description = "Deployment suffix, used to prefix resource names in case of testing multiple deploys at the same time"
+  type        = string
   default     = ""
 }
 
@@ -10,11 +11,13 @@ variable "service_account_email" {
 
 variable "region" {
   description = "Deployment region"
+  type        = string
   default     = "europe-west1"
 }
 
 variable "zone" {
-  description = "Deployment zone"
+  description = "Deployment zone, for the indexer VM and the Cloud SQL instance's primary"
+  type        = string
   default     = "europe-west1-b"
 }
 
@@ -29,7 +32,21 @@ variable "project" {
 }
 
 variable "sql_tier" {
-  default = "db-custom-1-3840"
+  description = "Cloud SQL machine tier"
+  type        = string
+  default     = "db-custom-1-3840"
+}
+
+variable "database_version" {
+  description = "Cloud SQL MySQL version. Changing it on an existing instance runs an in-place major version upgrade."
+  type        = string
+  default     = "MYSQL_8_0"
+}
+
+variable "machine_type" {
+  description = "Machine type for the indexer VM"
+  type        = string
+  default     = "e2-medium"
 }
 
 variable "high_availability" {
@@ -39,8 +56,15 @@ variable "high_availability" {
 }
 
 variable "cli" {
+  description = "If true, gives the indexer VM and the database a public IP. The database then accepts connections only from cli_authorized_networks."
+  type        = bool
   default     = false
-  description = "If true loads a different config and makes indexer db public"
+}
+
+variable "cli_authorized_networks" {
+  description = "cli mode only: CIDRs allowed to reach the database's public IP, as name => CIDR. Prefer cloud-sql-proxy over listing addresses here."
+  type        = map(string)
+  default     = {}
 }
 
 variable "chain_rpc_endpoint" {

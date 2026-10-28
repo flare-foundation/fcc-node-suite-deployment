@@ -1,28 +1,34 @@
 variable "project" {
   description = "GCP project to deploy into"
+  type        = string
   default     = "flare-network-sandbox"
 }
 
 variable "region" {
+  type    = string
   default = "europe-west1"
 }
 
 variable "zone" {
+  type    = string
   default = "europe-west1-b"
 }
 
 variable "service_account_email" {
   description = "Runtime service account for the tee-machine/tee-proxy/tee-indexer VMs. Needs roles/confidentialcomputing.workloadUser (without it the Confidential Space launcher cannot reach the attestation verifier and the workload exits after ~3s with exit_code=4) and roles/monitoring.metricWriter. Whoever runs terraform also needs roles/iam.serviceAccountUser on this SA to attach it to the VMs."
+  type        = string
   default     = "confidential-sa@flare-network-sandbox.iam.gserviceaccount.com"
 }
 
 variable "tee_node_docker_image" {
   description = "tee-machine workload image"
+  type        = string
   default     = "ghcr.io/flare-foundation/tee-node:v0.0.26"
 }
 
 variable "tee_proxy_docker_image" {
   description = "tee-proxy image"
+  type        = string
   default     = "ghcr.io/flare-foundation/tee-proxy:v0.0.24"
 }
 
@@ -33,7 +39,7 @@ variable "tee_proxy_private_key" {
 }
 
 variable "initial_owner" {
-  description = "Address that owns the TEE machine. This is the SAME keypair as tee_proxy_private_key - generate-key.sh prints both halves, the address goes here and the private key above. Deliberately has no default: the module's own default is a Flare-held address, and silently inheriting it deploys a machine you cannot configure."
+  description = "Address that owns the TEE machine. This is the SAME keypair as tee_proxy_private_key - generate-key.sh prints both halves, the address goes here and the private key above."
   type        = string
 
   validation {

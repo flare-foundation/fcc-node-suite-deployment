@@ -3,7 +3,8 @@ locals {
   # crossed a major version on 2026-08-18 (v2.0.0) - two applies of the same
   # commit either side of that date would deploy different indexers with
   # nothing in the plan to say so.
-  indexer_image = "ghcr.io/flare-foundation/flare-system-c-chain-indexer:v2.0.2"
+  # The digest pins it further: a tag can be re-pushed.
+  indexer_image = "ghcr.io/flare-foundation/flare-system-c-chain-indexer:v2.0.2@sha256:4f5bb1e00b3e0b5f1dfb45670247505bdc7a0fee27df72f3e6bc57d5ac58a29f"
 
   # v2's readiness endpoint: 503 while startup catchup runs, 200 once
   # continuous indexing begins.
@@ -32,7 +33,7 @@ locals {
 
   # systemd unit that runs the indexer container, replacing the Konlet
   # `gce-container-declaration` metadata key - see the equivalent comment in
-  # modules/tee-package/proxy-server.tf for why that key is gone.
+  # modules/tee-package/proxy_server.tf for why that key is gone.
   tee_indexer_service = <<-EOT
     [Unit]
     Description=tee-indexer
@@ -46,7 +47,11 @@ locals {
     ExecStartPre=-/usr/bin/docker rm -f tee-indexer
     ExecStartPre=/usr/bin/docker pull ${local.indexer_image}
     ExecStart=/usr/bin/docker run --rm --name tee-indexer \
-      --publish ${local.health_port}:${local.health_port} \
+      --cap-drop ALL \
+      --security-opt no-new-privileges \
+      --log-opt max-size=10m \
+      --log-opt max-file=5 \
+      --publish 127.0.0.1:${local.health_port}:${local.health_port} \
       --volume /etc/tee-indexer/config.toml:/app/config.toml:ro \
       ${local.indexer_image}
     ExecStop=/usr/bin/docker stop tee-indexer
@@ -89,7 +94,7 @@ resource "google_compute_address" "tee_indexer_ip" {
 resource "google_compute_instance" "tee_indexer" {
   name         = join("-", compact(["tee-indexer", var.cli ? "cli" : "", var.deploy_suffix]))
   zone         = var.zone
-  machine_type = "e2-medium"
+  machine_type = var.machine_type
 
   allow_stopping_for_update = true
 
@@ -114,15 +119,29 @@ resource "google_compute_instance" "tee_indexer" {
     }
   }
 
+  shielded_instance_config {
+    enable_secure_boot          = true
+    enable_vtpm                 = true
+    enable_integrity_monitoring = true
+  }
+
   tags = var.cli ? ["tee-indexer-cli"] : ["tee-indexer"]
 
   metadata = {
     user-data = local.cloud_config
+    # Only keys on the instance itself are accepted, not project-wide ones.
+    block-project-ssh-keys = true
+  }
+
+  # `gcloud compute ssh` adds its key to the instance once project keys are
+  # blocked. Ignore it, or every apply would remove it again.
+  lifecycle {
+    ignore_changes = [metadata["ssh-keys"]]
   }
 }
 
 # Firewall rule for SSH access to tee-indexer, cli mode or not - via IAP only,
-# same as the debug-mode SSH rules in tee-package (see tee-machine.tf there).
+# same as the debug-mode SSH rules in tee-package (see tee_machine.tf there).
 resource "google_compute_firewall" "allow_tee_indexer_ssh" {
   name          = join("-", compact(["allow-tee-indexer-ssh", var.deploy_suffix]))
   network       = var.network

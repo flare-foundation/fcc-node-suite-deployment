@@ -2,6 +2,7 @@
 #
 # Replace tee-indexer, optionally wiping its database first.
 
+# shellcheck source=scripts/_common.sh
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
 usage() {

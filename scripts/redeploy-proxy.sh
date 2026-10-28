@@ -7,6 +7,7 @@
 # metadata at boot - so a replaced proxy that comes back on a different IP
 # leaves tee-machine talking to nothing until it is replaced too.
 
+# shellcheck source=scripts/_common.sh
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
 usage() {

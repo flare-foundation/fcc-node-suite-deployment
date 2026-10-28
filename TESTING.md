@@ -3,7 +3,7 @@
 How to check that a freshly-applied stack (tee-machine + tee-proxy +
 tee-indexer) is actually working, not just that Terraform succeeded. Examples
 below use `envs/coston-sandbox`'s naming (`deploy_suffix = "coston"`,
-`project = "flare-network-sandbox"`, `zone = "europe-west1-b"`) - substitute
+`zone = "europe-west1-b"`; `YOUR_PROJECT` stands for your GCP project) - substitute
 your own if you're testing a different env.
 
 ## 1. `/info` - the main external check
@@ -77,7 +77,7 @@ opens to tee-machine's IP - you can't hit them from your laptop. SSH into
 tee-proxy instead (debug mode is on in coston-sandbox, so this works):
 
 ```
-gcloud compute ssh tee-proxy-coston --zone europe-west1-b --project flare-network-sandbox --tunnel-through-iap
+gcloud compute ssh tee-proxy-coston --zone europe-west1-b --project YOUR_PROJECT --tunnel-through-iap
 curl -s localhost:6661/healthy   # trivial 200 - only tells you the process is up
 curl -s localhost:6661/startup   # 200 once initial startup finished
 curl -s -i localhost:6661/ready  # the useful one
@@ -96,7 +96,7 @@ exactly which subsystem to go look at next.
 **tee-proxy** (Container-Optimized OS VM, container run by a systemd unit):
 
 ```
-gcloud compute ssh tee-proxy-coston --zone europe-west1-b --project flare-network-sandbox --tunnel-through-iap
+gcloud compute ssh tee-proxy-coston --zone europe-west1-b --project YOUR_PROJECT --tunnel-through-iap
 journalctl -u tee-proxy -f
 ```
 
@@ -118,7 +118,7 @@ is redirected to the serial console because `tee_machine_debug_mode = true`
 enables `tee-container-log-redirect`):
 
 ```
-gcloud compute instances get-serial-port-output tee-machine-coston --zone europe-west1-b --project flare-network-sandbox
+gcloud compute instances get-serial-port-output tee-machine-coston --zone europe-west1-b --project YOUR_PROJECT
 ```
 
 Look for `"Node initialized."` / `"tee node initialized"` and per-queue
@@ -133,7 +133,7 @@ explicit attestation-success line; look on the tee-proxy side instead
 **tee-indexer** (also a COS VM with a systemd unit):
 
 ```
-gcloud compute ssh tee-indexer-coston --zone europe-west1-b --project flare-network-sandbox --tunnel-through-iap
+gcloud compute ssh tee-indexer-coston --zone europe-west1-b --project YOUR_PROJECT --tunnel-through-iap
 journalctl -u tee-indexer -f
 curl -s -o /dev/null -w '%{http_code}
 ' localhost:8080/health
@@ -154,7 +154,7 @@ answers in one call (503 during startup catchup, 200 once continuous indexing
 has begun):
 
 ```
-gcloud compute ssh tee-indexer-coston --zone europe-west1-b --project flare-network-sandbox --tunnel-through-iap
+gcloud compute ssh tee-indexer-coston --zone europe-west1-b --project YOUR_PROJECT --tunnel-through-iap
 curl -s -o /dev/null -w '%{http_code}
 ' localhost:8080/health
 ```
@@ -196,7 +196,7 @@ the depth with `redis-cli ... DBSIZE`, or just run
 `../../scripts/flush-redis.sh --dry-run`, which reports it and exits.
 
 **GCS bucket** (`terraform output` doesn't expose it at env level, but
-`gsutil ls gs://flare-network-sandbox-tee-proxy-coston/` works directly from
+`gsutil ls gs://YOUR_PROJECT-tee-proxy-coston/` works directly from
 your laptop with normal GCP auth): this is tee-proxy's result-storage
 backend. Being empty right after a fresh apply is normal - it fills in as
 wallet/backup actions happen. A `"result storage failing"` error from
@@ -254,7 +254,7 @@ If you are working on the box directly rather than through Terraform:
 | `/info` unreachable | tee-proxy down, or wrong external IP/firewall | tee-proxy logs, `terraform output tee_proxy_external_endpoint` |
 | `/info` returns data but signing-policy fields stay zero | indexer hasn't seen a `SigningPolicyInitialized` log yet, or hasn't caught up | `/ready` indexer-delay check, tee-indexer logs, indexer DB row recency |
 | `/info` `attestation`/`dataSignature`/`codeHash` empty | tee-machine hasn't attested / isn't reachable from tee-proxy | tee-machine serial console, tee-proxy's `"fetching initial TEE info"` logs |
-| tee-proxy panics `error signing: could not sign` / `/info` signature fields are 0 bytes | tee-node has no `CHAIN_ID` - it signs nothing until `ChainID()` succeeds (`tee-env-CHAIN_ID` in `tee-machine.tf`) | tee-machine serial console for `router.go:164 ... error signing`; confirm `tee-env-CHAIN_ID` is in the instance's metadata |
+| tee-proxy panics `error signing: could not sign` / `/info` signature fields are 0 bytes | tee-node has no `CHAIN_ID` - it signs nothing until `ChainID()` succeeds (`tee-env-CHAIN_ID` in `tee_machine.tf`) | tee-machine serial console for `router.go:164 ... error signing`; confirm `tee-env-CHAIN_ID` is in the instance's metadata |
 | tee-proxy panics `initializing signing policy: ... no signing policy logs found in db` | indexer's `start_index` is after the Relay's last `SigningPolicyInitialized` log, so that event was never indexed | see the row below - starting at that log is necessary but not sufficient |
 | tee-proxy panics on loop with `recovering pub key for 0x...: invalid number of logs` | `start_index` sits between the voter registrations and the policy log. Building the policy recovers each voter's public key from the `v,r,s` in their `VoterRegistered` event on VoterRegistry, which is emitted *earlier* than `SigningPolicyInitialized` on Relay | start at or before the `VotePowerBlockSelected` block of the epoch `initial_signing_policy_offset` selects - two epochs back from the newest policy. (`registerVoter` requires a non-zero `newSigningPolicyInitializationStartBlockNumber` and `votePowerBlock`, set at `RandomAcquisitionStarted` and `VotePowerBlockSelected`, so that block is the earliest a `VoterRegistered` for the epoch can exist.) Find it via a block explorer's log API - 30-block `eth_getLogs` caps make scanning for it directly impractical. Moving `start_index` backwards also needs the database dropped: `scripts/redeploy-indexer.sh --drop-db` |
 | indexer makes little/no progress, repeated `Backoff exhausted: ... requested too many blocks ..., maximum is set to 30` | `log_range` unset/too wide for this RPC's `eth_getLogs` block-range cap | `modules/tee-indexer/templates/indexer/config.toml.tftpl`'s `[indexer]` block - `log_range` must be <= the RPC's cap |

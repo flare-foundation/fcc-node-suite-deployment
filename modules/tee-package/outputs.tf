@@ -4,8 +4,8 @@ output "tee_proxy_external_ip" {
 }
 
 output "tee_proxy_external_endpoint" {
-  description = "External endpoint for tee-proxy"
-  value       = "http://${google_compute_address.tee_proxy_ip.address}:${local.external_port}"
+  description = "External endpoint for tee-proxy, on port 80. This is the URL to register on chain."
+  value       = "http://${google_compute_address.tee_proxy_ip.address}"
 }
 
 output "tee_proxy_internal_endpoint" {

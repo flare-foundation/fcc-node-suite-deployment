@@ -13,7 +13,7 @@ terraform output tee_proxy_info_url
 curl -s "$(terraform output -raw tee_proxy_info_url)" | jq .
 ```
 
-This hits tee-proxy's public port (6662). A **healthy, settled** response
+This hits tee-proxy's public port (80). A **healthy, settled** response
 looks like:
 
 ```jsonc

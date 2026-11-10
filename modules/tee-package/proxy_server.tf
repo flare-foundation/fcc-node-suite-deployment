@@ -91,7 +91,7 @@ locals {
       --env PRIVATE_KEY \
       --env DIRECT_API_KEY \
       --publish ${local.internal_port}:${local.internal_port} \
-      --publish ${local.external_port}:${local.external_port} \
+      --publish 80:${local.external_port} \
       --volume /etc/tee-proxy/config.toml:/app/config/config.toml:ro \
       ${var.tee_proxy_docker_image}
     ExecStop=/usr/bin/docker stop tee-proxy
@@ -186,7 +186,9 @@ resource "google_compute_instance" "tee_proxy" {
   }
 }
 
-# Firewall rule for tee-proxy's external port
+# Firewall rule for tee-proxy's external API, published on host port 80 rather
+# than 6662: callers' egress policies often allow standard ports only. Plain
+# HTTP - never redirect it to https, Go clients turn a redirected POST into a GET.
 resource "google_compute_firewall" "allow_tee_proxy_external" {
   name          = join("-", compact(["allow-tee-proxy-external", var.deploy_suffix]))
   network       = var.network
@@ -197,10 +199,10 @@ resource "google_compute_firewall" "allow_tee_proxy_external" {
 
   allow {
     protocol = "tcp"
-    ports    = [local.external_port]
+    ports    = ["80"]
   }
 
-  description = "Allow external port ${local.external_port} for tee-proxy"
+  description = "Allow external port 80 for tee-proxy"
 }
 
 # Firewall rule for tee-proxy's internal port - only from tee-machine

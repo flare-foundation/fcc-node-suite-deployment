@@ -123,7 +123,21 @@ terraform output tee_proxy_info_url
 ```
 
 gives you the URL to check that tee-proxy is up and talking to the rest of
-the stack.
+the stack. `terraform output tee_proxy_external_endpoint` (`http://<ip>`, port
+80) is the URL to register on chain for the machine.
+
+**Upgrading a deployment registered on `:6662`:** `terraform apply`, then
+straight away reset tee-proxy:
+
+```
+gcloud compute instances reset <tee-proxy instance> --zone <zone> --project <project>
+```
+
+then register the new `tee_proxy_external_endpoint` and check `/info` on it.
+The apply moves the firewall to port 80, and the reset makes tee-proxy boot
+with the new unit: COS re-runs cloud-init on every boot. A reset keeps the
+internal IP, so tee-machine is untouched. Port 6662 stops answering at the
+apply.
 
 ## If something looks stuck
 

@@ -4,7 +4,7 @@ locals {
   # commit either side of that date would deploy different indexers with
   # nothing in the plan to say so.
   # The digest pins it further: a tag can be re-pushed.
-  indexer_image = "ghcr.io/flare-foundation/flare-system-c-chain-indexer:v2.0.2@sha256:4f5bb1e00b3e0b5f1dfb45670247505bdc7a0fee27df72f3e6bc57d5ac58a29f"
+  indexer_image = "ghcr.io/flare-foundation/flare-system-c-chain-indexer:v2.1.0@sha256:c5f2e15b03c74bfe4d6c6c5c89a082655f6ae8b8e4fa7381029c2d48ad8bcdee"
 
   # v2's readiness endpoint: 503 while startup catchup runs, 200 once
   # continuous indexing begins.

@@ -13,19 +13,6 @@ locals {
   # gives "no signing policy logs found in db" no matter how caught up the indexer is.
   relay = "0x5017728F117501A24EF9C3756C07f0d564598596"
 
-  # Must be at or before the VotePowerBlockSelected block of the epoch
-  # initial_signing_policy_offset selects - two reward epochs back from the newest
-  # signing policy. See envs/coston-sandbox/main.tf for why the policy log itself is
-  # not a sufficient bound, and TESTING.md's "invalid number of logs" row.
-  #
-  # 35614590 is epoch 6088's VotePowerBlockSelected, picked on 2026-09-21 when the
-  # newest policy was 6091 - one epoch of margin below the 6089 that offset 2
-  # required. Earlier is always safe and only costs catch-up time; later panics.
-  # Coston2 reward epochs run roughly 10-11k blocks apart, so re-pick before a fresh
-  # deploy using the explorer query documented in envs/coston-sandbox/main.tf
-  # (same topic0, but against this network's FlareSystemsManager).
-  indexer_start_index = 35614590
-
   # TEE governance, from the same staging config. governance_signers must be the
   # signer set that actually governs the extension this machine runs - with the
   # wrong set, tee-node rejects every machine-path list update. machine_path_manager
@@ -42,9 +29,10 @@ resource "google_compute_network" "tee" {
   auto_create_subnetworks = true
 }
 
-# Cloud SQL private IP requires the VPC to be peered with Google's managed
-# services network first - see
-# https://cloud.google.com/sql/docs/mysql/private-ip#network_requirements
+# Private service access existed for the indexer's Cloud SQL private IP. This
+# stack no longer runs an indexer, so nothing uses it. It is left in place so
+# that removing the indexer is not also a VPC peering change. Delete these
+# three resources in a separate apply once Cloud SQL is gone.
 resource "google_project_service" "service_networking" {
   project = var.project
   service = "servicenetworking.googleapis.com"
@@ -76,9 +64,9 @@ resource "google_service_networking_connection" "private_service_access" {
   depends_on = [google_project_service.service_networking]
 }
 
-# tee-machine has no public IP even in debug mode, and tee-indexer has none outside
-# cli mode - both still need outbound internet (pulling images, the attestation
-# service, the chain RPC), so route egress through Cloud NAT.
+# tee-machine has no public IP even in debug mode, and still needs outbound
+# internet (pulling images, the attestation service), so route egress through
+# Cloud NAT.
 resource "google_compute_router" "tee" {
   name    = "tee-coston2-router"
   project = var.project
@@ -95,32 +83,6 @@ resource "google_compute_router_nat" "tee" {
   source_subnetwork_ip_ranges_to_nat = "ALL_SUBNETWORKS_ALL_IP_RANGES"
 }
 
-module "tee_indexer" {
-  source = "../../modules/tee-indexer"
-
-  deploy_suffix         = "coston2"
-  project               = var.project
-  region                = var.region
-  zone                  = var.zone
-  network               = google_compute_network.tee.self_link
-  service_account_email = var.service_account_email
-  drop_table_at_start   = var.indexer_drop_table_at_start
-  chain_rpc_endpoint    = local.chain_rpc_endpoint
-  flare_systems_manager = local.flare_systems_manager
-  relay                 = local.relay
-  voter_registry        = local.voter_registry
-  start_index           = local.indexer_start_index
-  history_drop_seconds  = 0
-
-  # Governance is configured on the package below, so the indexer must also
-  # collect the MachinePathManager events tee-proxy's machine-path-list service
-  # reads out of this database - otherwise the service starts, finds nothing and
-  # rejects every list update without logging a cause.
-  machine_path_manager = local.machine_path_manager
-
-  depends_on = [google_service_networking_connection.private_service_access]
-}
-
 module "tee_package" {
   source = "../../modules/tee-package"
 
@@ -133,7 +95,6 @@ module "tee_package" {
   tee_node_docker_image  = var.tee_node_docker_image
   tee_proxy_docker_image = var.tee_proxy_docker_image
   tee_proxy_private_key  = var.tee_proxy_private_key
-  tee_indexer_database   = module.tee_indexer.database_config
   chain_id               = local.chain_id
   flare_systems_manager  = local.flare_systems_manager
   relay                  = local.relay
@@ -148,4 +109,10 @@ module "tee_package" {
   machine_path_manager = local.machine_path_manager
   governance_signers   = local.governance_signers
   governance_threshold = local.governance_threshold
+
+  # No indexer: tee-proxy reads the chain from the public Coston2 RPC. The TEE
+  # node cannot verify the signing policy and voter keys it returns, which is
+  # acceptable for a sandbox and not for production.
+  chain_source  = "rpc"
+  chain_rpc_url = local.chain_rpc_endpoint
 }

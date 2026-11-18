@@ -9,8 +9,8 @@ service_account_email = "tee-runtime@PROJECT_ID.iam.gserviceaccount.com"
 
 # Stock tee-node image. This deploys extension 0. Replace it with your own
 # extension image when you are not running the base image.
-tee_node_docker_image  = "ghcr.io/flare-foundation/tee-node:v0.0.26"
-tee_proxy_docker_image = "ghcr.io/flare-foundation/tee-proxy:v0.0.24"
+tee_node_docker_image  = "ghcr.io/flare-foundation/tee-node:v0.0.29"
+tee_proxy_docker_image = "ghcr.io/flare-foundation/tee-proxy:v0.0.27"
 
 tee_proxy_private_key = "0x..."
 initial_owner         = "0x..." # machine owner address
@@ -45,3 +45,7 @@ machine_path_manager  = "0x..." # FlareTeeManager
 # have defaults on the commented variables in variables.tf.
 # indexer_db_user     = "..."
 # indexer_db_password = "..."
+
+# Without an indexer (chain_source = "rpc" in main.tf), tee-proxy reads
+# chain_rpc_endpoint directly. Uncomment if that endpoint needs a key.
+# chain_rpc_api_key = "..."

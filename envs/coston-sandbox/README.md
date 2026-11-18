@@ -1,8 +1,13 @@
 # coston-sandbox
 
-A concrete (not generic-placeholder) example: one tee-package + tee-indexer
-deployed against Coston in Flare's `flare-network-sandbox` GCP project,
-using the existing `confidential-sa` service account there.
+A concrete (not generic-placeholder) example: one tee-package deployed
+against Coston in Flare's `flare-network-sandbox` GCP project, using the
+existing `confidential-sa` service account there.
+
+There is no indexer. tee-proxy reads the chain from the public Coston RPC
+(`chain_source = "rpc"`). The TEE node cannot verify the signing policy and
+voter keys that endpoint returns, which is fine for a sandbox and not for
+production.
 
 ```
 cd envs/coston-sandbox

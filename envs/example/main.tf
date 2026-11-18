@@ -117,6 +117,17 @@ module "tee_package" {
   #   password     = var.indexer_db_password
   # }
 
+  # To run with no indexer at all, comment tee_indexer_database above and
+  # uncomment these. tee-proxy then reads the chain from chain_rpc_endpoint
+  # directly. Remove module.tee_indexer, the tee_indexer_instance_name output,
+  # the indexer_drop_table_at_start variable, and the service-networking
+  # resources that exist only for Cloud SQL. The TEE node cannot verify the
+  # initial signing policy and voter keys an RPC endpoint returns: use a node
+  # you run in production, public endpoints for testing only.
+  # chain_source      = "rpc"
+  # chain_rpc_url     = local.chain_rpc_endpoint
+  # chain_rpc_api_key = var.chain_rpc_api_key
+
   chain_id              = local.chain_id
   flare_systems_manager = local.flare_systems_manager
   relay                 = local.relay

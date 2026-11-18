@@ -6,7 +6,7 @@ Stands up a single tee-node package on GCP:
   (`tee_node_docker_image`).
 - **tee-proxy**: a Container-Optimized-OS GCE VM that brokers between
   tee-machine and the outside world - reads chain state via the
-  `tee-indexer` database, caches via Memorystore Redis, and persists its
+  `tee-indexer` database or a C-chain JSON-RPC endpoint, caches via Memorystore Redis, and persists its
   own state to a GCS bucket this module creates.
 
 No Kubernetes cluster required - both are plain GCE VMs.
@@ -21,7 +21,11 @@ No Kubernetes cluster required - both are plain GCE VMs.
 - Project Editor for whoever runs Terraform, plus `roles/iam.serviceAccountUser`
   on that service account.
 - A `tee_indexer_database` value - normally `module.tee_indexer.database_config`
-  from the sibling `tee-indexer` module.
+  from the sibling `tee-indexer` module. Or, with no indexer,
+  `chain_source = "rpc"` and a C-chain JSON-RPC `chain_rpc_url` (plus
+  `chain_rpc_api_key` if it needs one). RPC mode needs tee-proxy v0.0.26 or
+  later. The TEE node cannot verify the signing policy and voter keys an RPC
+  endpoint returns, so use a node you run in production.
 - A tee-proxy signing private key you generate/manage yourself with
   `/scripts/generate-key.sh`. Its address is also this package's
   `initial_owner` - one keypair, two variables.

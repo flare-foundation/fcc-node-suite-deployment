@@ -27,43 +27,6 @@ locals {
   ]
   governance_threshold = 3
   governance_safe      = "0x25365AA95F57768d598cA6C938f93F7a8D2469E8"
-
-  # Must be at or before the VotePowerBlockSelected block of the epoch
-  # initial_signing_policy_offset selects - two reward epochs back from the
-  # newest signing policy.
-  #
-  # Being at or before the Relay's SigningPolicyInitialized log is necessary
-  # but not sufficient: building the policy also recovers each voter's public
-  # key from the v,r,s in their VoterRegistered event on VoterRegistry, which
-  # is emitted earlier. Start between the two and tee-proxy panics on loop with
-  # "recovering pub key for 0x...: invalid number of logs". VotePowerBlockSelected
-  # is the bound because registerVoter requires a non-zero votePowerBlock, set
-  # there, so no VoterRegistered for the epoch can precede it.
-  #
-  # 54280338 is reward epoch 6087's VotePowerBlockSelected, picked on
-  # 2026-09-21 when the newest signing policy was epoch 6090 - so one epoch of
-  # margin below the 6088 that offset 2 required. Earlier is always safe and
-  # only costs catch-up time; later panics.
-  #
-  # Re-pick before any fresh deploy: reward epochs roll roughly every 6300
-  # blocks (~3.5h) on Coston, so a stale value here is the difference between
-  # minutes and days of indexing. Find the current one from the explorer's log
-  # API - the 30-block eth_getLogs cap makes scanning for it over RPC
-  # impractical:
-  #
-  #   https://coston-explorer.flare.network/api?module=logs&action=getLogs
-  #     &address=<flare_systems_manager>&topic0=0xf21722dbe044a7cea0f6d81c871cae750971e36c9dd10999e46f2b46f26ac7ff
-  #     &fromBlock=<tip-100000>&toBlock=<tip>
-  #
-  # (that topic0 is VotePowerBlockSelected(uint24,uint64,uint64); take the
-  # event for newest_epoch - initial_signing_policy_offset, or older.)
-  #
-  # Paired with history_drop_seconds = 0 below, which makes the indexer
-  # actually use this instead of its own history-drop-computed, more-recent
-  # start. Moving it backwards later needs the indexer database dropped
-  # (scripts/redeploy-indexer.sh --drop-db), since the indexer otherwise
-  # resumes from its last state row.
-  indexer_start_index = 54280338
 }
 
 resource "google_compute_network" "tee" {
@@ -72,9 +35,10 @@ resource "google_compute_network" "tee" {
   auto_create_subnetworks = true
 }
 
-# Cloud SQL private IP requires the VPC to be peered with Google's managed
-# services network first - see
-# https://cloud.google.com/sql/docs/mysql/private-ip#network_requirements
+# Private service access existed for the indexer's Cloud SQL private IP. This
+# stack no longer runs an indexer, so nothing uses it. It is left in place so
+# that removing the indexer is not also a VPC peering change. Delete these
+# three resources in a separate apply once Cloud SQL is gone.
 resource "google_project_service" "service_networking" {
   project = var.project
   service = "servicenetworking.googleapis.com"
@@ -110,9 +74,8 @@ resource "google_service_networking_connection" "private_service_access" {
 }
 
 # tee-machine has no public IP even in debug mode (see tee_machine.tf), and
-# tee-indexer has none outside cli mode - both still need outbound internet
-# access (pulling container images, calling the attestation service, hitting
-# the chain RPC), so route their egress through Cloud NAT instead.
+# still needs outbound internet access (pulling container images, calling the
+# attestation service), so route its egress through Cloud NAT instead.
 resource "google_compute_router" "tee" {
   name    = "tee-coston-router"
   project = var.project
@@ -129,27 +92,6 @@ resource "google_compute_router_nat" "tee" {
   source_subnetwork_ip_ranges_to_nat = "ALL_SUBNETWORKS_ALL_IP_RANGES"
 }
 
-module "tee_indexer" {
-  source = "../../modules/tee-indexer"
-
-  deploy_suffix         = "coston"
-  project               = var.project
-  region                = var.region
-  zone                  = var.zone
-  network               = google_compute_network.tee.self_link
-  service_account_email = var.service_account_email
-  drop_table_at_start   = var.indexer_drop_table_at_start
-  chain_rpc_endpoint    = local.chain_rpc_endpoint
-  flare_systems_manager = local.flare_systems_manager
-  relay                 = local.relay
-  voter_registry        = local.voter_registry
-  start_index           = local.indexer_start_index
-  history_drop_seconds  = 0
-  machine_path_manager  = local.machine_path_manager
-
-  depends_on = [google_service_networking_connection.private_service_access]
-}
-
 module "tee_package" {
   source = "../../modules/tee-package"
 
@@ -162,7 +104,6 @@ module "tee_package" {
   tee_node_docker_image  = var.tee_node_docker_image
   tee_proxy_docker_image = var.tee_proxy_docker_image
   tee_proxy_private_key  = var.tee_proxy_private_key
-  tee_indexer_database   = module.tee_indexer.database_config
   chain_id               = local.chain_id
   flare_systems_manager  = local.flare_systems_manager
   relay                  = local.relay
@@ -177,4 +118,10 @@ module "tee_package" {
   # The Flare-held address this sandbox has always run under. The module no
   # longer defaults to it.
   initial_owner = "0xEfFDC9d60eaa243b2fCC5c2A21FA938B3A872d07"
+
+  # No indexer: tee-proxy reads the chain from the public Coston RPC. The TEE
+  # node cannot verify the signing policy and voter keys it returns, which is
+  # acceptable for a sandbox and not for production.
+  chain_source  = "rpc"
+  chain_rpc_url = local.chain_rpc_endpoint
 }

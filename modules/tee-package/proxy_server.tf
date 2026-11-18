@@ -19,11 +19,12 @@ locals {
   config_toml = templatefile("${path.module}/templates/tee-proxy/config.toml.tftpl", {
     redis_host                = google_redis_instance.tee_proxy_redis.host
     redis_port                = google_redis_instance.tee_proxy_redis.port
-    indexer_host              = var.tee_indexer_database.hostname
-    indexer_port              = var.tee_indexer_database.port
-    indexer_database_name     = var.tee_indexer_database.databaseName
-    indexer_database_user     = var.tee_indexer_database.user
-    indexer_database_password = var.tee_indexer_database.password
+    chain_source              = var.chain_source
+    indexer_host              = try(var.tee_indexer_database.hostname, "") # null in rpc mode, where [db] is not written
+    indexer_port              = try(var.tee_indexer_database.port, 0)
+    indexer_database_name     = try(var.tee_indexer_database.databaseName, "")
+    indexer_database_user     = try(var.tee_indexer_database.user, "")
+    indexer_database_password = try(var.tee_indexer_database.password, "")
     internal_port             = local.internal_port
     external_port             = local.external_port
     chain_id                  = var.chain_id
@@ -44,13 +45,18 @@ locals {
 
   # PRIVATE_KEY reaches the container through a 0600 EnvironmentFile rather
   # than the unit itself, so it is not visible in `systemctl cat tee-proxy`
-  # or in the process table.
-  tee_proxy_env = <<-EOT
-    PRIVATE_KEY=${var.tee_proxy_private_key}
-    %{if var.direct_api_key != ""~}
-    DIRECT_API_KEY=${var.direct_api_key}
-    %{endif~}
-  EOT
+  # or in the process table. NODE_URL and NODE_API_KEY go the same way: an
+  # RPC URL can carry credentials in its path or query. Built from a map
+  # rather than a heredoc with %{ if } directives, which indented every
+  # conditional line. Empty values are left out.
+  tee_proxy_env = join("", [
+    for key, value in {
+      PRIVATE_KEY    = var.tee_proxy_private_key
+      DIRECT_API_KEY = var.direct_api_key
+      NODE_URL       = var.chain_source == "rpc" ? var.chain_rpc_url : ""
+      NODE_API_KEY   = var.chain_source == "rpc" ? var.chain_rpc_api_key : ""
+    } : "${key}=${value}\n" if value != ""
+  ])
 
   # systemd unit that runs the tee-proxy container. This replaces the Konlet
   # `gce-container-declaration` metadata key, which GCE stopped accepting on
@@ -90,6 +96,8 @@ locals {
       --log-opt max-file=5 \
       --env PRIVATE_KEY \
       --env DIRECT_API_KEY \
+      --env NODE_URL \
+      --env NODE_API_KEY \
       --publish ${local.internal_port}:${local.internal_port} \
       --publish 80:${local.external_port} \
       --volume /etc/tee-proxy/config.toml:/app/config/config.toml:ro \

@@ -37,7 +37,8 @@ This repository contains the Terraform used in the guide.
   callers' egress policies often allow only standard ports. Register
   `http://<static-ip>`, not `:6662`.
 - **tee-indexer** indexes the chain data tee-proxy needs, into its own
-  Cloud SQL database. You can point tee-proxy at an external indexer instead.
+  Cloud SQL database. You can point tee-proxy at an external indexer instead,
+  or run it with no indexer, reading a C-chain node's JSON-RPC directly.
 - Alongside those: a Redis cache, a GCS bucket for tee-proxy's storage, and
   the VPC and Cloud NAT that give the private VMs a way out.
 
@@ -161,8 +162,8 @@ gcloud iam service-accounts add-iam-policy-binding "$SA" \
 ## Workload image
 
 `envs/example/terraform.tfvars.example` points
-`tee_node_docker_image` at `ghcr.io/flare-foundation/tee-node:v0.0.26` and
-`tee_proxy_docker_image` at `ghcr.io/flare-foundation/tee-proxy:v0.0.24`.
+`tee_node_docker_image` at `ghcr.io/flare-foundation/tee-node:v0.0.29` and
+`tee_proxy_docker_image` at `ghcr.io/flare-foundation/tee-proxy:v0.0.27`.
 Extension `0` uses those. You do not build a proxy image for the scaffold:
 tee-proxy stays on the stock image.
 
@@ -287,7 +288,7 @@ service_account_email = "tee-runtime@PROJECT_ID.iam.gserviceaccount.com"
 deploy_suffix         = "coston2-scaffold"
 
 tee_node_docker_image  = "ghcr.io/OWNER/extension-scaffold@sha256:DIGEST"
-tee_proxy_docker_image = "ghcr.io/flare-foundation/tee-proxy:v0.0.24"
+tee_proxy_docker_image = "ghcr.io/flare-foundation/tee-proxy:v0.0.27"
 
 tee_proxy_private_key = "0x..."
 initial_owner         = "0x..." # INITIAL_OWNER
@@ -335,6 +336,28 @@ at an indexer you already have:
    `indexer_drop_table_at_start` variable.
 4. In `terraform.tfvars`, set `indexer_db_host`, `indexer_db_user`, and
    `indexer_db_password`.
+
+### Run without an indexer
+
+tee-proxy v0.0.26 and later can read the chain from a C-chain node's
+JSON-RPC endpoint instead of an indexer database. That drops the indexer VM
+and Cloud SQL.
+
+1. In `main.tf`, comment `tee_indexer_database` and uncomment the
+   `chain_source = "rpc"` block under it. tee-proxy reads
+   `chain_rpc_endpoint`.
+2. Comment `module "tee_indexer"` and the three service-networking resources
+   used only for Cloud SQL.
+3. Remove the `tee_indexer_instance_name` output from `outputs.tf` and the
+   `indexer_drop_table_at_start` variable.
+4. If the endpoint needs a key, uncomment the `chain_rpc_api_key` variable
+   and set it in `terraform.tfvars`.
+
+The URL and key reach tee-proxy as `NODE_URL` and `NODE_API_KEY` through its
+`0600` env file, not the config. On a fresh start tee-proxy sends the TEE
+node its initial signing policy and voter keys, which the node cannot
+verify. In RPC mode they are only as trustworthy as the endpoint. Use public
+endpoints for testing, and a node you run in production.
 
 Keep the VPC, Cloud NAT, and router blocks either way. tee-machine has no
 public IP, so it reaches the internet through Cloud NAT to pull its image
@@ -399,7 +422,8 @@ sudo journalctl -u tee-proxy -f
 ```
 
 On the tee-proxy VM, `curl -s localhost:6661/ready` names the failing check.
-A `c-chain indexer delay` result means the indexer is behind the chain tip.
+A `c-chain indexer delay` result means the indexer, or in RPC mode the
+node, is behind the chain tip.
 A `connecting to database` result means tee-proxy cannot reach the indexer
 database.
 
@@ -423,7 +447,7 @@ directory.
 | Change | Command |
 | --- | --- |
 | tee-proxy config, image, or any `tee-env-*` value | `../../scripts/redeploy-proxy.sh` |
-| Indexer host, user, or password | `../../scripts/redeploy-proxy.sh` |
+| Indexer host, user, or password, or the chain source | `../../scripts/redeploy-proxy.sh` |
 | Bundled indexer start block or wipe | `../../scripts/redeploy-indexer.sh` |
 | tee-proxy queue backed up | `../../scripts/flush-redis.sh` |
 

@@ -15,10 +15,6 @@ output "tee_proxy_instance_name" {
   value = module.tee_package.tee_proxy_instance_name
 }
 
-output "tee_indexer_instance_name" {
-  value = module.tee_indexer.instance_name
-}
-
 output "redis_host" {
   value = module.tee_package.redis_host
 }

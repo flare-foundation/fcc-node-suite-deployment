@@ -83,9 +83,18 @@ variable "chain_id" {
 }
 
 variable "chain_rpc_endpoint" {
-  description = "Public RPC URL for the target chain. Used by the indexer. A custom extension that reads CHAIN_URL sets that itself in extension_env."
+  description = "Public RPC URL for the target chain. Used by the indexer, or by tee-proxy directly when it runs without one (chain_source = \"rpc\" in main.tf). A custom extension that reads CHAIN_URL sets that itself in extension_env."
   type        = string
 }
+
+# Optional API key for chain_rpc_endpoint when tee-proxy reads it directly.
+# Uncomment together with the chain_source block in main.tf.
+# variable "chain_rpc_api_key" {
+#   description = "API key for chain_rpc_endpoint, sent by tee-proxy as the x-apikey query parameter. Supply via terraform.tfvars."
+#   type        = string
+#   default     = ""
+#   sensitive   = true
+# }
 
 # Contract addresses are inputs so this example does not pin a network snapshot.
 variable "flare_systems_manager" {

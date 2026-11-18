@@ -52,9 +52,10 @@ correct for this deployment, since `envs/coston-sandbox` doesn't set
 `extension_id` (module default is the zero address). Only `initialOwner`
 being zero (or wrong) would indicate a real problem.
 
-**Timing note specific to this stack:** the indexer only starts collecting
-from a recent block (`indexer_start_index` in `envs/coston-sandbox/main.tf`,
-currently `53650000`) rather than from genesis. tee-proxy's signing-policy
+**Timing note for a stack with an indexer** (`envs/coston-sandbox` and
+`envs/coston2-sandbox` now read RPC directly and skip this): the indexer only
+starts collecting from a recent block (`indexer_start_index` in the
+environment's `main.tf`) rather than from genesis. tee-proxy's signing-policy
 values come from `SigningPolicyInitialized` events on the Relay contract, so
 if no such event has landed on-chain at or after that start block yet, the
 policy fields can legitimately stay empty until the next natural rollover on
@@ -130,10 +131,11 @@ tee-proxy is actually listening on 6661. tee-node itself doesn't emit an
 explicit attestation-success line; look on the tee-proxy side instead
 (above) for confirmation that an info exchange completed.
 
-**tee-indexer** (also a COS VM with a systemd unit):
+**tee-indexer** (also a COS VM with a systemd unit; only in environments
+that run one, such as `envs/coston2-shielded-transfers`):
 
 ```
-gcloud compute ssh tee-indexer-coston --zone europe-west1-b --project YOUR_PROJECT --tunnel-through-iap
+gcloud compute ssh tee-indexer-coston2-transfers --zone europe-west1-b --project YOUR_PROJECT --tunnel-through-iap
 journalctl -u tee-indexer -f
 curl -s -o /dev/null -w '%{http_code}
 ' localhost:8080/health

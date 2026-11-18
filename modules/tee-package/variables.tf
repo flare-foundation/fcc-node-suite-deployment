@@ -40,7 +40,7 @@ variable "service_account_email" {
 }
 
 variable "tee_node_docker_image" {
-  description = "Docker image used for tee-machine. E.g. ghcr.io/flare-foundation/tee-node:v0.0.24"
+  description = "Docker image used for tee-machine. E.g. ghcr.io/flare-foundation/tee-node:v0.0.29"
   type        = string
 }
 
@@ -89,8 +89,19 @@ variable "tee_machine_debug_mode" {
   default     = false
 }
 
+variable "chain_source" {
+  description = "Where tee-proxy reads on-chain data from: \"indexer\" reads the C-chain indexer database in tee_indexer_database; \"rpc\" reads a C-chain node's JSON-RPC endpoint (chain_rpc_url) and needs no indexer. rpc needs tee-proxy v0.0.26 or later. The node cannot verify the initial signing policy and voter keys an rpc endpoint returns, so use a node you run in production; public endpoints are for testing."
+  type        = string
+  default     = "indexer"
+
+  validation {
+    condition     = contains(["indexer", "rpc"], var.chain_source)
+    error_message = "chain_source must be \"indexer\" or \"rpc\"."
+  }
+}
+
 variable "tee_indexer_database" {
-  description = "Configuration for the TEE Indexer database (typically module.tee_indexer.database_config)"
+  description = "Configuration for the TEE Indexer database (typically module.tee_indexer.database_config). Required when chain_source is \"indexer\", ignored when it is \"rpc\"."
   type = object({
     hostname     = string
     port         = number
@@ -98,7 +109,32 @@ variable "tee_indexer_database" {
     user         = string
     password     = string
   })
+  default   = null
   sensitive = true
+
+  validation {
+    condition     = var.chain_source != "indexer" || var.tee_indexer_database != null
+    error_message = "tee_indexer_database is required when chain_source is \"indexer\"."
+  }
+}
+
+variable "chain_rpc_url" {
+  description = "C-chain JSON-RPC endpoint tee-proxy reads on-chain data from when chain_source is \"rpc\" - a C-chain node, not the TEE node. Passed as the NODE_URL env var through tee-proxy's 0600 env file, not the config, since it can carry credentials."
+  type        = string
+  default     = ""
+  sensitive   = true
+
+  validation {
+    condition     = var.chain_source != "rpc" || var.chain_rpc_url != ""
+    error_message = "chain_rpc_url is required when chain_source is \"rpc\"."
+  }
+}
+
+variable "chain_rpc_api_key" {
+  description = "Optional API key for chain_rpc_url, sent as the x-apikey query parameter. Passed as the NODE_API_KEY env var through tee-proxy's 0600 env file."
+  type        = string
+  default     = ""
+  sensitive   = true
 }
 
 # Flare protocol contract addresses tee-proxy reads on-chain state from.
